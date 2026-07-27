@@ -1,26 +1,26 @@
 import { Item, BoardState } from '@/types/game';
 
 /**
- * Exponentielle Quota-Berechnung für ein Level.
- * Level 1 = 15, Level 2 = 33, Level 3 = 72, Level 4 = 159, Level 5 = 350, etc.
+ * Quota-Berechnung für sanften Einstieg und knackigere höhere Level:
+ * Level 1: 10
+ * Level 2: 22
+ * Level 3: 50
+ * Level 4: 110
+ * Level 5+: Math.floor(110 * Math.pow(2.1, level - 4))
  */
 export function calculateTargetQuota(level: number): number {
-  return Math.floor(15 * Math.pow(2.2, level - 1));
+  if (level === 1) return 10;
+  if (level === 2) return 22;
+  if (level === 3) return 50;
+  if (level === 4) return 110;
+  return Math.floor(110 * Math.pow(2.1, level - 4));
 }
 
 /**
- * Rebalanciertes Startdeck für Spielbeginn:
- * 3x Münze 🪙, 1x Katalysator 🧪, 1x Einsiedler 🧘
+ * Reduziertes Startdeck für Spielbeginn (3 Karten):
+ * 2x Münze 🪙, 1x Katalysator 🧪
  */
 export const BASE_CARD_POOL: Omit<Item, 'id'>[] = [
-  {
-    type: 'coin',
-    name: 'Münze',
-    icon: '🪙',
-    description: 'Generiert +1 Basis-Ertrag.',
-    baseValue: 1,
-    tier: 1,
-  },
   {
     type: 'coin',
     name: 'Münze',
@@ -41,16 +41,8 @@ export const BASE_CARD_POOL: Omit<Item, 'id'>[] = [
     type: 'catalyst',
     name: 'Katalysator',
     icon: '🧪',
-    description: '+1 Basis +1 für jedes angrenzende besetzte Feld.',
-    baseValue: 1,
-    tier: 1,
-  },
-  {
-    type: 'hermit',
-    name: 'Einsiedler',
-    icon: '🧘',
-    description: '+1 Basis. +3 Bonus, falls KEIN direkt angrenzendes Feld besetzt ist.',
-    baseValue: 1,
+    description: 'Basis +2 (+1 für jedes angrenzende besetzte Feld).',
+    baseValue: 2,
     tier: 1,
   },
 ];
@@ -72,15 +64,15 @@ export const CATALOG_POOL: Omit<Item, 'id'>[] = [
     type: 'catalyst',
     name: 'Katalysator',
     icon: '🧪',
-    description: '+1 Basis +1 für jedes angrenzende besetzte Feld.',
-    baseValue: 1,
+    description: 'Basis +2 (+1 für jedes angrenzende besetzte Feld).',
+    baseValue: 2,
     tier: 1,
   },
   {
     type: 'hermit',
     name: 'Einsiedler',
     icon: '🧘',
-    description: '+1 Basis. +3 Bonus, falls KEIN angrenzendes Feld besetzt ist.',
+    description: 'Basis +1 (+2 für jedes angrenzende LEERE Feld).',
     baseValue: 1,
     tier: 1,
   },
@@ -90,7 +82,7 @@ export const CATALOG_POOL: Omit<Item, 'id'>[] = [
     type: 'collector',
     name: 'Sammler',
     icon: '🧲',
-    description: '+1 Basis +1 pro Karte gleichen Typs auf dem Board.',
+    description: 'Basis +1 (+2 für jede Münze auf dem gesamten Board).',
     baseValue: 1,
     tier: 2,
   },
@@ -270,29 +262,29 @@ export function calculateTileScore(index: number, board: BoardState): number {
     }
 
     case 'catalyst': {
-      // Katalysator: +1 Basis + 1 für jedes angrenzende besetzte Feld
+      // Katalysator: Basis 2 + 1 für jedes angrenzende besetzte Feld
       const occupiedNeighborsCount = neighbors.reduce((count, nIdx) => {
         return board[nIdx] !== null ? count + 1 : count;
       }, 0);
-      baseYield = 1 + occupiedNeighborsCount;
+      baseYield = 2 + occupiedNeighborsCount;
       break;
     }
 
     case 'hermit': {
-      // Einsiedler: +1 Basis. +3 Bonus, falls KEIN direkt angrenzendes Feld besetzt ist
-      const occupiedNeighborsCount = neighbors.reduce((count, nIdx) => {
-        return board[nIdx] !== null ? count + 1 : count;
+      // Einsiedler: Basis 1 + 2 für jedes angrenzende LEERE Feld
+      const emptyNeighborsCount = neighbors.reduce((count, nIdx) => {
+        return board[nIdx] === null ? count + 1 : count;
       }, 0);
-      baseYield = 1 + (occupiedNeighborsCount === 0 ? 3 : 0);
+      baseYield = 1 + 2 * emptyNeighborsCount;
       break;
     }
 
     case 'collector': {
-      // Sammler: +1 Basis + 1 pro Karte gleichen Typs auf dem gesamten Board
-      const sameTypeCount = board.reduce((count, tile) => {
-        return tile?.type === item.type ? count + 1 : count;
+      // Sammler: Basis 1 + 2 für jede Münze auf dem gesamten Board
+      const coinCount = board.reduce((count, tile) => {
+        return tile?.type === 'coin' ? count + 1 : count;
       }, 0);
-      baseYield = 1 + sameTypeCount;
+      baseYield = 1 + 2 * coinCount;
       break;
     }
 
@@ -310,7 +302,6 @@ export function calculateTileScore(index: number, board: BoardState): number {
       // Tresor: +8 Ertrag, falls 2+ Nachbarn einen Wert (calculateTileScore) >= 3 haben
       const highValueNeighbors = neighbors.reduce((count, nIdx) => {
         if (board[nIdx] === null) return count;
-        // Berechne vereinfachten Nachbarwert (ohne Rekursionsschleife)
         const tileVal = calculateTileScoreWithoutRecursion(nIdx, board);
         return tileVal >= 3 ? count + 1 : count;
       }, 0);
@@ -334,7 +325,6 @@ export function calculateTileScore(index: number, board: BoardState): number {
     }
 
     case 'mosaic': {
-      // Mosaik: +2 pro einzigartigem Kartentyp auf dem Board
       const uniqueTypes = new Set<string>();
       for (const tile of board) {
         if (tile) uniqueTypes.add(tile.type);
@@ -344,7 +334,6 @@ export function calculateTileScore(index: number, board: BoardState): number {
     }
 
     case 'vacuum': {
-      // Vakuum: +2 pro LEEREM Feld auf dem Board
       const emptyCount = board.reduce((count, tile) => {
         return tile === null ? count + 1 : count;
       }, 0);
@@ -438,7 +427,6 @@ export function applyItemPlacement(
 
   switch (itemToPlace.type) {
     case 'smith': {
-      // Wandelt angrenzende Tier 1 Items in Goldschätze (+4) um
       for (const nIdx of neighbors) {
         if (newBoard[nIdx] !== null && newBoard[nIdx]!.tier === 1) {
           newBoard[nIdx] = {
@@ -457,7 +445,6 @@ export function applyItemPlacement(
     }
 
     case 'acid': {
-      // Löscht angrenzende Tier 1 Items
       for (const nIdx of neighbors) {
         if (newBoard[nIdx] !== null && newBoard[nIdx]!.tier === 1) {
           newBoard[nIdx] = null;
@@ -468,7 +455,6 @@ export function applyItemPlacement(
     }
 
     case 'compressor': {
-      // Absorbiert Punkte der Nachbarn dauerhaft und leert deren Felder
       const absorbedPoints = neighbors.reduce((sum, nIdx) => {
         return sum + calculateTileScore(nIdx, board);
       }, 0);
@@ -487,7 +473,6 @@ export function applyItemPlacement(
     }
 
     case 'pyre': {
-      // Löscht angrenzende Karten und erhält +10 Einmal-Bonus pro Karte
       let bonusPoints = 0;
       for (const nIdx of neighbors) {
         if (newBoard[nIdx] !== null) {
@@ -506,7 +491,6 @@ export function applyItemPlacement(
     }
 
     case 'midas': {
-      // Verdoppelt den Basiswert angrenzender Karten
       for (const nIdx of neighbors) {
         if (newBoard[nIdx] !== null) {
           const curVal = newBoard[nIdx]!.baseValue ?? 1;
@@ -521,7 +505,6 @@ export function applyItemPlacement(
     }
 
     case 'vortex': {
-      // Löscht gesamte Zeile und Spalte (+3 Ertrag pro gelöschter Karte)
       const lineIndices = getRowAndColumnIndices(targetIndex);
       let absorbedPoints = 0;
 
@@ -542,7 +525,6 @@ export function applyItemPlacement(
     }
 
     case 'philosopher_stone': {
-      // Füllt freie angrenzende Nachbarfelder mit Münzen (🪙)
       newBoard[targetIndex] = itemToPlace;
 
       for (const nIdx of neighbors) {
@@ -594,7 +576,6 @@ export function updateTurnEndBoard(board: BoardState): BoardState {
     return item;
   });
 
-  // Singularität: Löscht 1 zufälligen besetzten Nachbarn
   for (let i = 0; i < newBoard.length; i++) {
     const item = newBoard[i];
     if (item && item.type === 'singularity') {
@@ -613,7 +594,6 @@ export function updateTurnEndBoard(board: BoardState): BoardState {
 
 /**
  * Erstellt zufällig gezogene Draft-Optionen bis zum maximal freigeschalteten Tier.
- * Max Allowed Tier = Math.min(5, Math.ceil(currentLevel / 2))
  */
 export function getRandomDraftOptions(
   count = 3,
@@ -623,7 +603,6 @@ export function getRandomDraftOptions(
   const maxAllowedTier = Math.min(5, Math.ceil(currentLevel / 2));
   const availableItems = pool.filter((item) => item.tier <= maxAllowedTier);
 
-  // Fallback, falls der gefilterte Pool leer wäre
   const finalPool = availableItems.length > 0 ? availableItems : pool;
   const options: Item[] = [];
 
