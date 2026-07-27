@@ -1,65 +1,147 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from 'react';
+import { Item, BoardState } from '@/types/game';
+
+// Dummy-Item "Münze" für den Test-Klick auf ein leeres Feld
+const DUMMY_COIN: Item = {
+  id: 'coin-dummy',
+  name: 'Münze',
+  icon: '🪙',
+  description: 'Eine glänzende Goldmünze.',
+  baseValue: 1,
+};
+
+// 3 Test-Karten für den Draft-Bereich unten
+const DRAFT_TEST_CARDS: Item[] = [
+  {
+    id: 'draft-1',
+    name: 'Münze',
+    icon: '🪙',
+    description: 'Generiert Basiseinkommen.',
+    baseValue: 1,
+  },
+  {
+    id: 'draft-2',
+    name: 'Heiltrank',
+    icon: '🧪',
+    description: 'Erhöht benachbarte Werte.',
+    baseValue: 3,
+  },
+  {
+    id: 'draft-3',
+    name: 'Zauberbuch',
+    icon: '📜',
+    description: 'Verstärkt magische Symbole.',
+    baseValue: 5,
+  },
+];
 
 export default function Home() {
+  // Initialisiere das 4x4 Spielfeld mit 16 leeren Feldern (null)
+  const [board, setBoard] = useState<BoardState>(Array(16).fill(null));
+
+  /**
+   * Klick-Handler für ein Spielfeldfeld:
+   * Setzt testweise die "Münze", falls das Feld aktuell leer ist.
+   */
+  const handleCellClick = (index: number) => {
+    if (board[index] === null) {
+      const newBoard = [...board];
+      newBoard[index] = DUMMY_COIN;
+      setBoard(newBoard);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-between p-4 sm:p-8 font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Container für zentriertes Layout */}
+      <div className="w-full max-w-md flex flex-col items-center gap-6 my-auto">
+        
+        {/* Spieltitel */}
+        <header className="text-center space-y-1">
+          <h1 className="text-3xl font-extrabold tracking-wider bg-gradient-to-r from-amber-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent drop-shadow-sm">
+            Grid Alchemist
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+          <p className="text-xs text-slate-400 font-medium">Minimalistisches Alchemie-Grid-Spiel</p>
+        </header>
+
+        {/* Header-Leiste: Score, Quota, Züge */}
+        <section className="w-full grid grid-cols-3 gap-3 bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl shadow-lg backdrop-blur-sm">
+          {/* Score */}
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Score</span>
+            <span className="text-xl font-bold text-amber-400">0</span>
+          </div>
+
+          {/* Quota */}
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Ziel</span>
+            <span className="text-xl font-bold text-indigo-400">10</span>
+          </div>
+
+          {/* Züge */}
+          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Züge</span>
+            <span className="text-xl font-bold text-emerald-400">5 / 5</span>
+          </div>
+        </section>
+
+        {/* Mitte: 4x4 Spielfeld */}
+        <section className="w-full aspect-square bg-slate-900/80 border border-slate-800 p-3 rounded-2xl shadow-2xl backdrop-blur-sm flex flex-col justify-center">
+          <div className="grid grid-cols-4 gap-2 h-full w-full">
+            {board.map((item, index) => (
+              <button
+                key={index}
+                onClick={() => handleCellClick(index)}
+                aria-label={item ? `${item.name} auf Feld ${index + 1}` : `Leeres Feld ${index + 1}`}
+                className={`group relative flex flex-col items-center justify-center rounded-xl border transition-all duration-200 select-none ${
+                  item
+                    ? 'bg-gradient-to-b from-slate-800 to-slate-900 border-amber-500/40 shadow-md shadow-amber-950/20'
+                    : 'bg-slate-950/50 border-slate-800/80 hover:border-slate-700 hover:bg-slate-800/40 active:scale-95'
+                }`}
+              >
+                {item ? (
+                  <div className="flex flex-col items-center justify-center animate-in fade-in zoom-in-95 duration-150">
+                    <span className="text-2xl sm:text-3xl filter drop-shadow">{item.icon}</span>
+                    <span className="text-[10px] font-medium text-amber-200/90 mt-0.5">{item.name}</span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-700 font-mono group-hover:text-slate-500 transition-colors">
+                    +
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* Unten: 3 Test-Karten (Draft-Optionen) */}
+        <footer className="w-full space-y-2">
+          <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold px-1">
+            Entwurf-Optionen (Test-Karten)
+          </h2>
+          <div className="grid grid-cols-3 gap-2.5">
+            {DRAFT_TEST_CARDS.map((card) => (
+              <div
+                key={card.id}
+                className="group flex flex-col items-center p-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-indigo-500/60 hover:bg-slate-850 hover:-translate-y-1 hover:shadow-lg hover:shadow-indigo-950/30 transition-all duration-200 cursor-pointer"
+              >
+                <span className="text-2xl mb-1 group-hover:scale-110 transition-transform duration-200">
+                  {card.icon}
+                </span>
+                <span className="text-xs font-semibold text-slate-200 text-center leading-tight">
+                  {card.name}
+                </span>
+                <span className="text-[10px] text-indigo-400 font-bold mt-1">
+                  Wert: {card.baseValue}
+                </span>
+              </div>
+            ))}
+          </div>
+        </footer>
+
+      </div>
+    </main>
   );
 }
