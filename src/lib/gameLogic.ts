@@ -1,6 +1,14 @@
 import { Item, BoardState } from '@/types/game';
 
 /**
+ * Berechnet die Ziel-Quota für ein bestimmtes Level exponentiell.
+ * Level 1 = 15, Level 2 = 33, Level 3 = 72, Level 4 = 159, Level 5 = 350, etc.
+ */
+export function calculateTargetQuota(level: number): number {
+  return Math.floor(15 * Math.pow(2.2, level - 1));
+}
+
+/**
  * Der Basis-Karten-Pool für den Spielstart.
  */
 export const BASE_CARD_POOL: Omit<Item, 'id'>[] = [
@@ -163,7 +171,6 @@ export function calculateTileScore(index: number, board: BoardState): number {
     }
 
     case 'catalyst': {
-      // Katalysator: +1 Basis + 2 für jedes DIAGONAL angrenzende (nicht-leere) Feld
       const diagonals = getDiagonalIndices(index);
       const occupiedDiagonalsCount = diagonals.reduce((count, dIdx) => {
         return board[dIdx] !== null ? count + 1 : count;
@@ -266,7 +273,6 @@ export function applyItemPlacement(
   if (itemToPlace.type === 'compressor') {
     const neighbors = getAdjacentIndices(targetIndex);
 
-    // Berechne die Summe der aktuellen Punkte aller angrenzenden Nachbarn
     const absorbedPoints = neighbors.reduce((sum, nIdx) => {
       return sum + calculateTileScore(nIdx, board);
     }, 0);
@@ -286,7 +292,6 @@ export function applyItemPlacement(
   } else if (itemToPlace.type === 'smith') {
     const neighbors = getAdjacentIndices(targetIndex);
 
-    // Wandelt angrenzende Münzen in Goldschätze um
     for (const nIdx of neighbors) {
       if (newBoard[nIdx]?.type === 'coin') {
         newBoard[nIdx] = {

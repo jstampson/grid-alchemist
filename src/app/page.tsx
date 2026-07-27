@@ -6,6 +6,7 @@ import {
   BASE_CARD_POOL,
   calculateBoardScore,
   calculateTileScore,
+  calculateTargetQuota,
   applyItemPlacement,
   updateGoldminesOnBoard,
   getRandomDraftOptions,
@@ -16,9 +17,9 @@ export default function Home() {
   // Game State Hooks
   const [board, setBoard] = useState<BoardState>(Array(16).fill(null));
   const [score, setScore] = useState<number>(0);
-  const [targetQuota, setTargetQuota] = useState<number>(15);
-  const [currentTurn, setCurrentTurn] = useState<number>(5);
   const [level, setLevel] = useState<number>(1);
+  const [targetQuota, setTargetQuota] = useState<number>(() => calculateTargetQuota(1));
+  const [currentTurn, setCurrentTurn] = useState<number>(5);
 
   // Karten-Pool (Duplikate erlaubt!) & Draft
   const [playerPool, setPlayerPool] = useState<Omit<Item, 'id'>[]>(BASE_CARD_POOL);
@@ -29,9 +30,7 @@ export default function Home() {
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
   const [isRewardPhase, setIsRewardPhase] = useState<boolean>(false);
   const [rewardOptions, setRewardOptions] = useState<Item[]>([]);
-  const [selectedRewardCard, setSelectedRewardCard] = useState<Item | null>(null);
-  const [hasSkippedReward, setHasSkippedReward] = useState<boolean>(false);
-  const [isDeckThinningOpen, setIsDeckThinningOpen] = useState<boolean>(false);
+  const [rewardTab, setRewardTab] = useState<'choose' | 'burn'>('choose');
 
   const [hintMessage, setHintMessage] = useState<string | null>(null);
 
@@ -50,7 +49,7 @@ export default function Home() {
   };
 
   /**
-   * Platziert die gewählte Karte auf einem Gitterfeld (auch Überschreiben erlaubt!).
+   * Platziert die gewählte Karte auf einem Gitterfeld.
    */
   const handleCellClick = (index: number) => {
     if (isGameOver || isRewardPhase) return;
@@ -83,9 +82,7 @@ export default function Home() {
     if (newTurn === 0) {
       if (newScore >= targetQuota) {
         setRewardOptions(getRandomRewardOptions(3));
-        setSelectedRewardCard(null);
-        setHasSkippedReward(false);
-        setIsDeckThinningOpen(false);
+        setRewardTab('choose');
         setIsRewardPhase(true);
       } else {
         setIsGameOver(true);
@@ -94,45 +91,45 @@ export default function Home() {
   };
 
   /**
-   * Fügt eine Belohnungs-Karte dem eigenen Deck-Pool hinzu.
+   * Hilfsfunktion: Startet das nächste Level mit dem aktualisierten Deck-Pool.
    */
-  const handleSelectRewardCard = (rewardCard: Item) => {
-    const { id, ...cardTemplate } = rewardCard;
-    setPlayerPool((prev) => [...prev, cardTemplate]);
-    setSelectedRewardCard(rewardCard);
-    setHasSkippedReward(false);
-  };
+  const startNextLevelWithPool = (updatedPool: Omit<Item, 'id'>[]) => {
+    const nextLevel = level + 1;
+    const nextQuota = calculateTargetQuota(nextLevel);
 
-  /**
-   * Überspringt die Belohnungs-Karte.
-   */
-  const handleSkipReward = () => {
-    setSelectedRewardCard(null);
-    setHasSkippedReward(true);
-  };
-
-  /**
-   * Löscht eine ausgewählte Karte dauerhaft aus dem Spielerdeck (Deck-Thinning).
-   */
-  const handleRemoveCardFromPool = (indexToRemove: number) => {
-    setPlayerPool((prev) => prev.filter((_, idx) => idx !== indexToRemove));
-  };
-
-  /**
-   * Schließt die Reward-Phase ab und startet das nächste Level.
-   */
-  const handleStartNextLevel = () => {
-    setLevel((prevLevel) => prevLevel + 1);
-    setTargetQuota((prevQuota) => Math.round(prevQuota * 2.5));
+    setPlayerPool(updatedPool);
+    setLevel(nextLevel);
+    setTargetQuota(nextQuota);
     setCurrentTurn(5);
 
     setIsRewardPhase(false);
-    setIsDeckThinningOpen(false);
     setSelectedDraftItem(null);
-    setSelectedRewardCard(null);
-    setHasSkippedReward(false);
+    setDraftOptions(getRandomDraftOptions(updatedPool, 3));
+  };
 
-    setDraftOptions(getRandomDraftOptions(playerPool, 3));
+  /**
+   * Option A: Neue Karte wählen & direkt nächstes Level starten.
+   */
+  const handlePickRewardCard = (rewardCard: Item) => {
+    const { id, ...cardTemplate } = rewardCard;
+    const updatedPool = [...playerPool, cardTemplate];
+    startNextLevelWithPool(updatedPool);
+  };
+
+  /**
+   * Option B: Karte verbrennen (löschen) & direkt nächstes Level starten.
+   */
+  const handleBurnCardFromPool = (indexToRemove: number) => {
+    if (playerPool.length <= 1) return; // Mindestens 1 Karte im Deck behalten
+    const updatedPool = playerPool.filter((_, idx) => idx !== indexToRemove);
+    startNextLevelWithPool(updatedPool);
+  };
+
+  /**
+   * Option C: Überspringen & direkt nächstes Level starten.
+   */
+  const handleSkipRewardAndStartNextLevel = () => {
+    startNextLevelWithPool(playerPool);
   };
 
   /**
@@ -142,15 +139,12 @@ export default function Home() {
     const emptyBoard = Array(16).fill(null);
     setBoard(emptyBoard);
     setScore(0);
-    setTargetQuota(15);
-    setCurrentTurn(5);
     setLevel(1);
+    setTargetQuota(calculateTargetQuota(1));
+    setCurrentTurn(5);
     setIsGameOver(false);
     setIsRewardPhase(false);
-    setIsDeckThinningOpen(false);
     setSelectedDraftItem(null);
-    setSelectedRewardCard(null);
-    setHasSkippedReward(false);
     setHintMessage(null);
 
     setPlayerPool(BASE_CARD_POOL);
@@ -291,7 +285,7 @@ export default function Home() {
           </div>
         </footer>
 
-        {/* ROGUELIKE REWARD SCREEN */}
+        {/* REWARD SCREEN OVERLAY */}
         {isRewardPhase && (
           <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md rounded-2xl flex flex-col justify-between p-5 text-center z-30 animate-in fade-in duration-300 overflow-y-auto">
             
@@ -302,106 +296,100 @@ export default function Home() {
               <p className="text-xs text-slate-300 mt-1">
                 Score: <span className="font-bold text-emerald-300">{score}</span> / Ziel: <span className="font-bold text-indigo-300">{targetQuota}</span>
               </p>
+              <p className="text-[11px] text-slate-400 mt-2 font-medium">
+                Wähle genau <span className="text-amber-300 font-bold">1 Option</span> für dein Deck:
+              </p>
             </div>
 
-            {/* Haupt-Bereich: Deck Thinning Ansicht vs. Belohnungs-Auswahl */}
-            {isDeckThinningOpen ? (
-              /* DECK THINNING VIEW */
-              <div className="space-y-3 my-2">
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-xs font-bold text-red-400">Deck ausmisten ({playerPool.length} Karten im Deck)</span>
-                  <button
-                    onClick={() => setIsDeckThinningOpen(false)}
-                    className="text-[10px] text-slate-400 hover:text-slate-200 underline cursor-pointer"
-                  >
-                    Zurück zur Belohnung
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-300">
-                  Klicke auf eine Karte, um sie <span className="font-bold text-red-400">dauerhaft</span> aus deinem Deck-Pool zu löschen:
+            {/* TAB-NAVIGATION: Neue Karte | Karte Verbrennen | Überspringen */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-900 rounded-xl border border-slate-800 my-2">
+              <button
+                onClick={() => setRewardTab('choose')}
+                className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  rewardTab === 'choose'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                ➕ Neue Karte
+              </button>
+
+              <button
+                onClick={() => setRewardTab('burn')}
+                className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  rewardTab === 'burn'
+                    ? 'bg-red-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                🔥 Verbrennen
+              </button>
+
+              <button
+                onClick={handleSkipRewardAndStartNextLevel}
+                className="py-1.5 px-2 rounded-lg text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 transition-all cursor-pointer"
+              >
+                ⏩ Überspringen
+              </button>
+            </div>
+
+            {/* CONTENT ANZEIGE NACH AKTIVEM TAB */}
+            {rewardTab === 'choose' && (
+              <div className="space-y-2 my-1">
+                <p className="text-[11px] text-emerald-300 font-medium">
+                  Klicke auf 1 Karte, um sie dem Deck hinzuzufügen und Level {level + 1} zu starten:
                 </p>
 
-                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
-                  {playerPool.map((card, idx) => (
+                <div className="grid grid-cols-3 gap-2">
+                  {rewardOptions.map((rewardCard) => (
                     <button
-                      key={idx}
-                      onClick={() => handleRemoveCardFromPool(idx)}
-                      className="group flex flex-col items-center p-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-red-500 hover:bg-red-950/30 transition-all cursor-pointer"
+                      key={rewardCard.id}
+                      onClick={() => handlePickRewardCard(rewardCard)}
+                      className="group flex flex-col items-center p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-400 hover:bg-emerald-950/30 hover:scale-105 transition-all cursor-pointer"
                     >
-                      <span className="text-xl">{card.icon}</span>
-                      <span className="text-[10px] font-semibold text-slate-200">{card.name}</span>
-                      <span className="text-[8px] text-red-400 group-hover:block hidden">🗑️ Löschen</span>
+                      <span className="text-2xl mb-1 group-hover:scale-110 transition-transform">
+                        {rewardCard.icon}
+                      </span>
+                      <span className="text-xs font-bold text-emerald-300 text-center leading-tight">
+                        {rewardCard.name}
+                      </span>
+                      <span className="text-[8px] text-slate-300 text-center mt-1 leading-tight line-clamp-3">
+                        {rewardCard.description}
+                      </span>
                     </button>
                   ))}
                 </div>
               </div>
-            ) : (
-              /* REWARD SELECTION VIEW */
-              <div className="space-y-3 my-2">
-                <p className="text-xs font-semibold text-slate-200">
-                  Wähle 1 Karte für dein Deck:
+            )}
+
+            {rewardTab === 'burn' && (
+              <div className="space-y-2 my-1">
+                <p className="text-[11px] text-red-300 font-medium">
+                  Klicke auf 1 Karte, um sie <span className="font-bold">dauerhaft zu verbrennen</span> und Level {level + 1} zu starten:
                 </p>
 
-                <div className="grid grid-cols-3 gap-2">
-                  {rewardOptions.map((rewardCard) => {
-                    const isPicked = selectedRewardCard?.id === rewardCard.id;
-
-                    return (
-                      <button
-                        key={rewardCard.id}
-                        onClick={() => handleSelectRewardCard(rewardCard)}
-                        className={`group flex flex-col items-center p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          isPicked
-                            ? 'bg-emerald-950/80 border-emerald-400 ring-2 ring-emerald-500/50 scale-105'
-                            : 'bg-slate-900 border-slate-800 hover:border-emerald-500/50 hover:bg-slate-850 hover:scale-105'
-                        }`}
-                      >
-                        <span className="text-2xl mb-1 group-hover:scale-110 transition-transform">
-                          {rewardCard.icon}
-                        </span>
-                        <span className="text-xs font-bold text-emerald-300 text-center leading-tight">
-                          {rewardCard.name}
-                        </span>
-                        <span className="text-[8px] text-slate-300 text-center mt-1 leading-tight line-clamp-3">
-                          {rewardCard.description}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex justify-center">
-                  <button
-                    onClick={handleSkipReward}
-                    className={`text-xs px-3 py-1 rounded-lg border transition-all cursor-pointer ${
-                      hasSkippedReward
-                        ? 'bg-slate-800 border-slate-600 text-slate-300'
-                        : 'border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500'
-                    }`}
-                  >
-                    {hasSkippedReward ? '✓ Karte übersprungen' : '⏩ Keine Karte wählen (Überspringen)'}
-                  </button>
+                <div className="grid grid-cols-3 gap-2 max-h-44 overflow-y-auto p-1">
+                  {playerPool.map((card, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleBurnCardFromPool(idx)}
+                      disabled={playerPool.length <= 1}
+                      className="group flex flex-col items-center p-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-red-500 hover:bg-red-950/40 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <span className="text-xl mb-0.5">{card.icon}</span>
+                      <span className="text-[10px] font-semibold text-slate-200">{card.name}</span>
+                      <span className="text-[8px] text-red-400 mt-0.5 font-bold group-hover:block hidden">🔥 Verbrennen</span>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* Aktionen unten: Deck Thinning Toggle & Start Next Level */}
-            <div className="space-y-2 pt-2 border-t border-slate-800">
-              {!isDeckThinningOpen && (
-                <button
-                  onClick={() => setIsDeckThinningOpen(true)}
-                  className="w-full py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 text-xs font-semibold hover:border-red-500/60 hover:text-red-300 transition-all cursor-pointer"
-                >
-                  🗑️ 1 Karte aus Deck löschen ({playerPool.length} im Deck)
-                </button>
-              )}
-
-              <button
-                onClick={handleStartNextLevel}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold hover:from-emerald-400 hover:to-teal-500 transition-all shadow-lg shadow-emerald-950/40 hover:scale-[1.02] active:scale-95 cursor-pointer text-xs sm:text-sm"
-              >
-                Nächstes Level starten (Ziel: {Math.round(targetQuota * 2.5)} Punkte) →
-              </button>
+            {/* Footer-Info im Reward Overlay */}
+            <div className="pt-2 border-t border-slate-800">
+              <p className="text-[10px] text-slate-400 italic">
+                Nächstes Ziel: Level {level + 1} (Ziel-Quota: {calculateTargetQuota(level + 1)} Punkte)
+              </p>
             </div>
 
           </div>
