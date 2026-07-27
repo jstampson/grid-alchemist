@@ -1,7 +1,7 @@
 import { Item, BoardState } from '@/types/game';
 
 /**
- * Berechnet die Ziel-Quota für ein bestimmtes Level exponentiell.
+ * Exponentielle Quota-Berechnung für ein Level.
  * Level 1 = 15, Level 2 = 33, Level 3 = 72, Level 4 = 159, Level 5 = 350, etc.
  */
 export function calculateTargetQuota(level: number): number {
@@ -9,7 +9,8 @@ export function calculateTargetQuota(level: number): number {
 }
 
 /**
- * Der Basis-Karten-Pool für den Spielstart.
+ * Rebalanciertes Startdeck für Spielbeginn:
+ * 3x Münze 🪙, 1x Katalysator 🧪, 1x Einsiedler 🧘
  */
 export const BASE_CARD_POOL: Omit<Item, 'id'>[] = [
   {
@@ -18,48 +19,156 @@ export const BASE_CARD_POOL: Omit<Item, 'id'>[] = [
     icon: '🪙',
     description: 'Generiert +1 Basis-Ertrag.',
     baseValue: 1,
+    tier: 1,
   },
+  {
+    type: 'coin',
+    name: 'Münze',
+    icon: '🪙',
+    description: 'Generiert +1 Basis-Ertrag.',
+    baseValue: 1,
+    tier: 1,
+  },
+  {
+    type: 'coin',
+    name: 'Münze',
+    icon: '🪙',
+    description: 'Generiert +1 Basis-Ertrag.',
+    baseValue: 1,
+    tier: 1,
+  },
+  {
+    type: 'catalyst',
+    name: 'Katalysator',
+    icon: '🧪',
+    description: '+1 Basis +1 für jedes angrenzende besetzte Feld.',
+    baseValue: 1,
+    tier: 1,
+  },
+  {
+    type: 'hermit',
+    name: 'Einsiedler',
+    icon: '🧘',
+    description: '+1 Basis. +3 Bonus, falls KEIN direkt angrenzendes Feld besetzt ist.',
+    baseValue: 1,
+    tier: 1,
+  },
+];
+
+/**
+ * Der vollständige 17-Karten-Katalog (Tiers 1 - 5).
+ */
+export const CATALOG_POOL: Omit<Item, 'id'>[] = [
+  // --- TIER 1 ---
+  {
+    type: 'coin',
+    name: 'Münze',
+    icon: '🪙',
+    description: 'Generiert +1 Basis-Ertrag.',
+    baseValue: 1,
+    tier: 1,
+  },
+  {
+    type: 'catalyst',
+    name: 'Katalysator',
+    icon: '🧪',
+    description: '+1 Basis +1 für jedes angrenzende besetzte Feld.',
+    baseValue: 1,
+    tier: 1,
+  },
+  {
+    type: 'hermit',
+    name: 'Einsiedler',
+    icon: '🧘',
+    description: '+1 Basis. +3 Bonus, falls KEIN angrenzendes Feld besetzt ist.',
+    baseValue: 1,
+    tier: 1,
+  },
+
+  // --- TIER 2 ---
+  {
+    type: 'collector',
+    name: 'Sammler',
+    icon: '🧲',
+    description: '+1 Basis +1 pro Karte gleichen Typs auf dem Board.',
+    baseValue: 1,
+    tier: 2,
+  },
+  {
+    type: 'goldmine',
+    name: 'Goldmine',
+    icon: '⛏️',
+    description: 'Startet mit Ertrag = 8. Sinkt nach jedem Zug um 1 (min 0).',
+    baseValue: 8,
+    tier: 2,
+  },
+  {
+    type: 'smith',
+    name: 'Schmied',
+    icon: '🔨',
+    description: 'Wandelt bei Platzierung angrenzende Tier 1 Items in Goldschätze (+4) um.',
+    baseValue: 1,
+    tier: 2,
+  },
+  {
+    type: 'vault',
+    name: 'Tresor',
+    icon: '🏦',
+    description: '+8 Ertrag, falls 2+ Nachbarn einen Wert >= 3 erzielen.',
+    baseValue: 0,
+    tier: 2,
+  },
+  {
+    type: 'acid',
+    name: 'Säure',
+    icon: '☣️',
+    description: '+2 Basis. Löscht bei Platzierung angrenzende Tier 1 Items.',
+    baseValue: 2,
+    tier: 2,
+  },
+
+  // --- TIER 3 ---
+  {
+    type: 'compressor',
+    name: 'Verdichter',
+    icon: '🌀',
+    description: 'Löscht angrenzende Items und speichert deren Punkte dauerhaft.',
+    baseValue: 0,
+    tier: 3,
+  },
+  {
+    type: 'pyre',
+    name: 'Scheiterhaufen',
+    icon: '🔥',
+    description: 'Löscht angrenzende Karten und erhält +10 Einmal-Bonus pro gelöschter Karte.',
+    baseValue: 0,
+    tier: 3,
+  },
+  {
+    type: 'mosaic',
+    name: 'Mosaik',
+    icon: '🧩',
+    description: '+2 pro einzigartigem Kartentyp auf dem Board.',
+    baseValue: 0,
+    tier: 3,
+  },
+  {
+    type: 'vacuum',
+    name: 'Vakuum',
+    icon: '🌪️',
+    description: '+2 pro LEEREM Feld auf dem 4x4-Board.',
+    baseValue: 0,
+    tier: 3,
+  },
+
+  // --- TIER 4 ---
   {
     type: 'amplifier',
     name: 'Verstärker',
     icon: '⚡',
     description: 'Verdoppelt den Ertrag aller angrenzenden Nachbarn.',
     baseValue: 0,
-  },
-  {
-    type: 'collector',
-    name: 'Sammler',
-    icon: '🧲',
-    description: '+1 Basis +1 pro Münze/Goldschatz in derselben Zeile/Spalte.',
-    baseValue: 1,
-  },
-  {
-    type: 'catalyst',
-    name: 'Katalysator',
-    icon: '🧪',
-    description: '+1 Basis +2 für jedes DIAGONAL angrenzende (nicht-leere) Feld.',
-    baseValue: 1,
-  },
-  {
-    type: 'vault',
-    name: 'Tresor',
-    icon: '🏦',
-    description: '+5 Ertrag, falls mindestens 2 angrenzende Felder Münzen/Goldschätze sind, sonst 0.',
-    baseValue: 0,
-  },
-];
-
-/**
- * Der vollständige Gesamtkatalog aller verfügbaren Karten für Belohnungen & Drafts.
- */
-export const CATALOG_POOL: Omit<Item, 'id'>[] = [
-  ...BASE_CARD_POOL,
-  {
-    type: 'compressor',
-    name: 'Verdichter',
-    icon: '🌀',
-    description: 'Löscht alle angrenzenden Items und addiert deren Punkte dauerhaft als eigenen Wert.',
-    baseValue: 0,
+    tier: 4,
   },
   {
     type: 'prism',
@@ -67,25 +176,46 @@ export const CATALOG_POOL: Omit<Item, 'id'>[] = [
     icon: '💎',
     description: 'Erhöht den aus allen Kacheln berechneten Gesamt-Score am Ende um x1.5 (+50%).',
     baseValue: 0,
+    tier: 4,
   },
   {
-    type: 'goldmine',
-    name: 'Goldmine',
-    icon: '⛏️',
-    description: 'Startet mit Ertrag = 6. Sinkt nach jedem absolvierten Zug um 1 (bis minimal 0).',
-    baseValue: 6,
-  },
-  {
-    type: 'smith',
-    name: 'Schmied',
-    icon: '🔨',
-    description: 'Wandelt beim Platzieren alle angrenzenden Münzen auf dem Board in Goldschätze (💰, +4 Ertrag) um.',
+    type: 'midas',
+    name: 'Midas',
+    icon: '👑',
+    description: 'Verdoppelt beim Platzieren den Basiswert (baseValue) angrenzender Karten.',
     baseValue: 1,
+    tier: 4,
+  },
+  {
+    type: 'vortex',
+    name: 'Strudel',
+    icon: '🌀',
+    description: 'Löscht die eigene Zeile/Spalte und erhält +3 Basis pro gelöschter Karte.',
+    baseValue: 0,
+    tier: 4,
+  },
+
+  // --- TIER 5 / GOD-TIER ---
+  {
+    type: 'philosopher_stone',
+    name: 'Philosophenstein',
+    icon: '🔮',
+    description: '+5 Basis. Füllt freie angrenzende Nachbarfelder bei Platzierung mit Münzen (🪙).',
+    baseValue: 5,
+    tier: 5,
+  },
+  {
+    type: 'singularity',
+    name: 'Singularität',
+    icon: '🕳️',
+    description: '+15 Basis. Löscht am Ende jedes Zugs 1 zufälligen Nachbarn.',
+    baseValue: 15,
+    tier: 5,
   },
 ];
 
 /**
- * Hilfsfunktion zur Ermittlung der 4 direkten orthogonalen Nachbarn (oben, unten, links, rechts).
+ * Hilfsfunktion zur Ermittlung der 4 orthogonalen Nachbar-Indizes.
  */
 export function getAdjacentIndices(index: number): number[] {
   const row = Math.floor(index / 4);
@@ -98,22 +228,6 @@ export function getAdjacentIndices(index: number): number[] {
   if (col < 3) neighbors.push(row * 4 + (col + 1));
 
   return neighbors;
-}
-
-/**
- * Hilfsfunktion zur Ermittlung der 4 DIAGONALEN Nachbarn (oben-links, oben-rechts, unten-links, unten-rechts).
- */
-export function getDiagonalIndices(index: number): number[] {
-  const row = Math.floor(index / 4);
-  const col = index % 4;
-  const diagonals: number[] = [];
-
-  if (row > 0 && col > 0) diagonals.push((row - 1) * 4 + (col - 1));
-  if (row > 0 && col < 3) diagonals.push((row - 1) * 4 + (col + 1));
-  if (row < 3 && col > 0) diagonals.push((row + 1) * 4 + (col - 1));
-  if (row < 3 && col < 3) diagonals.push((row + 1) * 4 + (col + 1));
-
-  return diagonals;
 }
 
 /**
@@ -135,7 +249,7 @@ export function getRowAndColumnIndices(index: number): number[] {
 }
 
 /**
- * Berechnet den Punktwert einer einzelnen Kachel an der Position `index` unter Berücksichtigung aller aktiven Effekte.
+ * Berechnet den Punktwert einer einzelnen Kachel an Position `index`.
  */
 export function calculateTileScore(index: number, board: BoardState): number {
   const item = board[index];
@@ -155,36 +269,57 @@ export function calculateTileScore(index: number, board: BoardState): number {
       break;
     }
 
-    case 'amplifier': {
-      baseYield = 0;
+    case 'catalyst': {
+      // Katalysator: +1 Basis + 1 für jedes angrenzende besetzte Feld
+      const occupiedNeighborsCount = neighbors.reduce((count, nIdx) => {
+        return board[nIdx] !== null ? count + 1 : count;
+      }, 0);
+      baseYield = 1 + occupiedNeighborsCount;
+      break;
+    }
+
+    case 'hermit': {
+      // Einsiedler: +1 Basis. +3 Bonus, falls KEIN direkt angrenzendes Feld besetzt ist
+      const occupiedNeighborsCount = neighbors.reduce((count, nIdx) => {
+        return board[nIdx] !== null ? count + 1 : count;
+      }, 0);
+      baseYield = 1 + (occupiedNeighborsCount === 0 ? 3 : 0);
       break;
     }
 
     case 'collector': {
-      const lineIndices = getRowAndColumnIndices(index);
-      const coinCount = lineIndices.reduce((count, idx) => {
-        const type = board[idx]?.type;
-        return type === 'coin' || type === 'treasure' ? count + 1 : count;
+      // Sammler: +1 Basis + 1 pro Karte gleichen Typs auf dem gesamten Board
+      const sameTypeCount = board.reduce((count, tile) => {
+        return tile?.type === item.type ? count + 1 : count;
       }, 0);
-      baseYield = 1 + coinCount;
+      baseYield = 1 + sameTypeCount;
       break;
     }
 
-    case 'catalyst': {
-      const diagonals = getDiagonalIndices(index);
-      const occupiedDiagonalsCount = diagonals.reduce((count, dIdx) => {
-        return board[dIdx] !== null ? count + 1 : count;
-      }, 0);
-      baseYield = 1 + 2 * occupiedDiagonalsCount;
+    case 'goldmine': {
+      baseYield = item.baseValue !== undefined ? item.baseValue : 8;
+      break;
+    }
+
+    case 'smith': {
+      baseYield = 1;
       break;
     }
 
     case 'vault': {
-      const adjacentCoinCount = neighbors.reduce((count, nIdx) => {
-        const type = board[nIdx]?.type;
-        return type === 'coin' || type === 'treasure' ? count + 1 : count;
+      // Tresor: +8 Ertrag, falls 2+ Nachbarn einen Wert (calculateTileScore) >= 3 haben
+      const highValueNeighbors = neighbors.reduce((count, nIdx) => {
+        if (board[nIdx] === null) return count;
+        // Berechne vereinfachten Nachbarwert (ohne Rekursionsschleife)
+        const tileVal = calculateTileScoreWithoutRecursion(nIdx, board);
+        return tileVal >= 3 ? count + 1 : count;
       }, 0);
-      baseYield = adjacentCoinCount >= 2 ? 5 : 0;
+      baseYield = highValueNeighbors >= 2 ? 8 : 0;
+      break;
+    }
+
+    case 'acid': {
+      baseYield = 2;
       break;
     }
 
@@ -193,18 +328,57 @@ export function calculateTileScore(index: number, board: BoardState): number {
       break;
     }
 
+    case 'pyre': {
+      baseYield = item.baseValue || 0;
+      break;
+    }
+
+    case 'mosaic': {
+      // Mosaik: +2 pro einzigartigem Kartentyp auf dem Board
+      const uniqueTypes = new Set<string>();
+      for (const tile of board) {
+        if (tile) uniqueTypes.add(tile.type);
+      }
+      baseYield = 2 * uniqueTypes.size;
+      break;
+    }
+
+    case 'vacuum': {
+      // Vakuum: +2 pro LEEREM Feld auf dem Board
+      const emptyCount = board.reduce((count, tile) => {
+        return tile === null ? count + 1 : count;
+      }, 0);
+      baseYield = 2 * emptyCount;
+      break;
+    }
+
+    case 'amplifier': {
+      baseYield = 0;
+      break;
+    }
+
     case 'prism': {
       baseYield = 0;
       break;
     }
 
-    case 'goldmine': {
-      baseYield = item.baseValue !== undefined ? item.baseValue : 6;
+    case 'midas': {
+      baseYield = item.baseValue || 1;
       break;
     }
 
-    case 'smith': {
-      baseYield = 1;
+    case 'vortex': {
+      baseYield = item.baseValue || 0;
+      break;
+    }
+
+    case 'philosopher_stone': {
+      baseYield = 5;
+      break;
+    }
+
+    case 'singularity': {
+      baseYield = 15;
       break;
     }
   }
@@ -218,8 +392,17 @@ export function calculateTileScore(index: number, board: BoardState): number {
 }
 
 /**
- * Berechnet den Gesamtertrag des 4x4-Spielfelds als Summe aller Kachel-Punktwerte
- * inkl. Prisma-Multiplikator (+50% pro Prisma).
+ * Hilfsfunktion für Tresor-Berechnung ohne Endlosrekursion.
+ */
+function calculateTileScoreWithoutRecursion(index: number, board: BoardState): number {
+  const item = board[index];
+  if (!item) return 0;
+  if (item.type === 'vault') return 0;
+  return item.baseValue || 1;
+}
+
+/**
+ * Berechnet den Gesamtertrag des 4x4-Spielfelds inkl. Prisma-Multiplikator (+50% pro Prisma).
  */
 export function calculateBoardScore(board: BoardState): number {
   let baseScore = 0;
@@ -243,25 +426,7 @@ export function calculateBoardScore(board: BoardState): number {
 }
 
 /**
- * Verringert den Ertrag aller Goldminen auf dem Board nach einem absolvierten Zug um 1 (bis minimal 0).
- */
-export function updateGoldminesOnBoard(board: BoardState): BoardState {
-  return board.map((item) => {
-    if (item && item.type === 'goldmine') {
-      const currentVal = item.baseValue !== undefined ? item.baseValue : 6;
-      const newVal = Math.max(0, currentVal - 1);
-      return {
-        ...item,
-        baseValue: newVal,
-        description: `Startet mit Ertrag = 6. Sinkt nach jedem Zug um 1 (Aktuell: ${newVal}).`,
-      };
-    }
-    return item;
-  });
-}
-
-/**
- * Führt die Platzierungslogik für ein Item aus (inkl. Schmied & Verdichter).
+ * Führt die Platzierungs-Trigger aller Karten aus.
  */
 export function applyItemPlacement(
   board: BoardState,
@@ -269,69 +434,202 @@ export function applyItemPlacement(
   itemToPlace: Item
 ): { newBoard: BoardState; placedItem: Item } {
   let newBoard = [...board];
+  const neighbors = getAdjacentIndices(targetIndex);
 
-  if (itemToPlace.type === 'compressor') {
-    const neighbors = getAdjacentIndices(targetIndex);
-
-    const absorbedPoints = neighbors.reduce((sum, nIdx) => {
-      return sum + calculateTileScore(nIdx, board);
-    }, 0);
-
-    const updatedCompressor: Item = {
-      ...itemToPlace,
-      baseValue: absorbedPoints,
-      description: `Verdichtet! Dauerhafter Ertrag: +${absorbedPoints}.`,
-    };
-
-    for (const nIdx of neighbors) {
-      newBoard[nIdx] = null;
-    }
-
-    newBoard[targetIndex] = updatedCompressor;
-    return { newBoard, placedItem: updatedCompressor };
-  } else if (itemToPlace.type === 'smith') {
-    const neighbors = getAdjacentIndices(targetIndex);
-
-    for (const nIdx of neighbors) {
-      if (newBoard[nIdx]?.type === 'coin') {
-        newBoard[nIdx] = {
-          id: `treasure_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          name: 'Goldschatz',
-          icon: '💰',
-          description: 'Ein wertvoller Goldschatz. Generiert +4 Ertrag.',
-          type: 'treasure',
-          baseValue: 4,
-        };
+  switch (itemToPlace.type) {
+    case 'smith': {
+      // Wandelt angrenzende Tier 1 Items in Goldschätze (+4) um
+      for (const nIdx of neighbors) {
+        if (newBoard[nIdx] !== null && newBoard[nIdx]!.tier === 1) {
+          newBoard[nIdx] = {
+            id: `treasure_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            name: 'Goldschatz',
+            icon: '💰',
+            description: 'Ein wertvoller Goldschatz. Generiert +4 Ertrag.',
+            type: 'treasure',
+            baseValue: 4,
+            tier: 2,
+          };
+        }
       }
+      newBoard[targetIndex] = itemToPlace;
+      return { newBoard, placedItem: itemToPlace };
     }
 
-    newBoard[targetIndex] = itemToPlace;
-    return { newBoard, placedItem: itemToPlace };
-  } else if (itemToPlace.type === 'goldmine') {
-    const goldmineItem: Item = {
-      ...itemToPlace,
-      baseValue: 6,
-    };
-    newBoard[targetIndex] = goldmineItem;
-    return { newBoard, placedItem: goldmineItem };
-  } else {
-    newBoard[targetIndex] = itemToPlace;
-    return { newBoard, placedItem: itemToPlace };
+    case 'acid': {
+      // Löscht angrenzende Tier 1 Items
+      for (const nIdx of neighbors) {
+        if (newBoard[nIdx] !== null && newBoard[nIdx]!.tier === 1) {
+          newBoard[nIdx] = null;
+        }
+      }
+      newBoard[targetIndex] = itemToPlace;
+      return { newBoard, placedItem: itemToPlace };
+    }
+
+    case 'compressor': {
+      // Absorbiert Punkte der Nachbarn dauerhaft und leert deren Felder
+      const absorbedPoints = neighbors.reduce((sum, nIdx) => {
+        return sum + calculateTileScore(nIdx, board);
+      }, 0);
+
+      const updatedCompressor: Item = {
+        ...itemToPlace,
+        baseValue: absorbedPoints,
+        description: `Verdichtet! Dauerhafter Ertrag: +${absorbedPoints}.`,
+      };
+
+      for (const nIdx of neighbors) {
+        newBoard[nIdx] = null;
+      }
+      newBoard[targetIndex] = updatedCompressor;
+      return { newBoard, placedItem: updatedCompressor };
+    }
+
+    case 'pyre': {
+      // Löscht angrenzende Karten und erhält +10 Einmal-Bonus pro Karte
+      let bonusPoints = 0;
+      for (const nIdx of neighbors) {
+        if (newBoard[nIdx] !== null) {
+          bonusPoints += 10;
+          newBoard[nIdx] = null;
+        }
+      }
+
+      const updatedPyre: Item = {
+        ...itemToPlace,
+        baseValue: bonusPoints,
+        description: `Scheiterhaufen gebrannt! Ertrag: +${bonusPoints}.`,
+      };
+      newBoard[targetIndex] = updatedPyre;
+      return { newBoard, placedItem: updatedPyre };
+    }
+
+    case 'midas': {
+      // Verdoppelt den Basiswert angrenzender Karten
+      for (const nIdx of neighbors) {
+        if (newBoard[nIdx] !== null) {
+          const curVal = newBoard[nIdx]!.baseValue ?? 1;
+          newBoard[nIdx] = {
+            ...newBoard[nIdx]!,
+            baseValue: curVal * 2,
+          };
+        }
+      }
+      newBoard[targetIndex] = itemToPlace;
+      return { newBoard, placedItem: itemToPlace };
+    }
+
+    case 'vortex': {
+      // Löscht gesamte Zeile und Spalte (+3 Ertrag pro gelöschter Karte)
+      const lineIndices = getRowAndColumnIndices(targetIndex);
+      let absorbedPoints = 0;
+
+      for (const idx of lineIndices) {
+        if (idx !== targetIndex && newBoard[idx] !== null) {
+          absorbedPoints += 3;
+          newBoard[idx] = null;
+        }
+      }
+
+      const updatedVortex: Item = {
+        ...itemToPlace,
+        baseValue: absorbedPoints,
+        description: `Strudel erzeugt! Dauerhafter Ertrag: +${absorbedPoints}.`,
+      };
+      newBoard[targetIndex] = updatedVortex;
+      return { newBoard, placedItem: updatedVortex };
+    }
+
+    case 'philosopher_stone': {
+      // Füllt freie angrenzende Nachbarfelder mit Münzen (🪙)
+      newBoard[targetIndex] = itemToPlace;
+
+      for (const nIdx of neighbors) {
+        if (newBoard[nIdx] === null) {
+          newBoard[nIdx] = {
+            id: `coin_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            name: 'Münze',
+            icon: '🪙',
+            description: 'Generiert +1 Basis-Ertrag.',
+            type: 'coin',
+            baseValue: 1,
+            tier: 1,
+          };
+        }
+      }
+      return { newBoard, placedItem: itemToPlace };
+    }
+
+    case 'goldmine': {
+      const goldmineItem: Item = {
+        ...itemToPlace,
+        baseValue: 8,
+      };
+      newBoard[targetIndex] = goldmineItem;
+      return { newBoard, placedItem: goldmineItem };
+    }
+
+    default: {
+      newBoard[targetIndex] = itemToPlace;
+      return { newBoard, placedItem: itemToPlace };
+    }
   }
 }
 
 /**
- * Erstellt zufällig gezogene Draft-Optionen aus einem Karten-Pool mit eindeutigen IDs.
+ * Führt Rundenende-Trigger aus (Goldmine, Singularität).
+ */
+export function updateTurnEndBoard(board: BoardState): BoardState {
+  let newBoard = board.map((item) => {
+    if (item && item.type === 'goldmine') {
+      const currentVal = item.baseValue !== undefined ? item.baseValue : 8;
+      const newVal = Math.max(0, currentVal - 1);
+      return {
+        ...item,
+        baseValue: newVal,
+        description: `Startet mit Ertrag = 8. Sinkt nach jedem Zug um 1 (Aktuell: ${newVal}).`,
+      };
+    }
+    return item;
+  });
+
+  // Singularität: Löscht 1 zufälligen besetzten Nachbarn
+  for (let i = 0; i < newBoard.length; i++) {
+    const item = newBoard[i];
+    if (item && item.type === 'singularity') {
+      const neighbors = getAdjacentIndices(i);
+      const occupiedNeighbors = neighbors.filter((nIdx) => newBoard[nIdx] !== null);
+
+      if (occupiedNeighbors.length > 0) {
+        const randomIdx = occupiedNeighbors[Math.floor(Math.random() * occupiedNeighbors.length)];
+        newBoard[randomIdx] = null;
+      }
+    }
+  }
+
+  return newBoard;
+}
+
+/**
+ * Erstellt zufällig gezogene Draft-Optionen bis zum maximal freigeschalteten Tier.
+ * Max Allowed Tier = Math.min(5, Math.ceil(currentLevel / 2))
  */
 export function getRandomDraftOptions(
-  pool: Omit<Item, 'id'>[] = CATALOG_POOL,
-  count = 3
+  count = 3,
+  currentLevel = 1,
+  pool: Omit<Item, 'id'>[] = CATALOG_POOL
 ): Item[] {
+  const maxAllowedTier = Math.min(5, Math.ceil(currentLevel / 2));
+  const availableItems = pool.filter((item) => item.tier <= maxAllowedTier);
+
+  // Fallback, falls der gefilterte Pool leer wäre
+  const finalPool = availableItems.length > 0 ? availableItems : pool;
   const options: Item[] = [];
 
   for (let i = 0; i < count; i++) {
-    const randomIndex = Math.floor(Math.random() * pool.length);
-    const template = pool[randomIndex];
+    const randomIndex = Math.floor(Math.random() * finalPool.length);
+    const template = finalPool[randomIndex];
 
     options.push({
       ...template,
@@ -343,8 +641,21 @@ export function getRandomDraftOptions(
 }
 
 /**
- * Erstellt zufällige Belohnungs-Karten aus dem Gesamtkatalog für den Roguelike Reward-Screen.
+ * Zieht 3 Belohnungskarten bis zum maximal freigeschalteten Tier für das aktuelle Level.
  */
-export function getRandomRewardOptions(count = 3): Item[] {
-  return getRandomDraftOptions(CATALOG_POOL, count);
+export function getRandomRewardOptions(count = 3, currentLevel = 1): Item[] {
+  return getRandomDraftOptions(count, currentLevel, CATALOG_POOL);
+}
+
+/**
+ * Zieht 1 zufällige Tier-5 / God-Tier Karte für den Punktlandungs-Bonus.
+ */
+export function getRandomTier5BonusCard(): Item {
+  const godTierItems = CATALOG_POOL.filter((item) => item.tier === 5);
+  const template = godTierItems[Math.floor(Math.random() * godTierItems.length)];
+
+  return {
+    ...template,
+    id: `${template.type}_bonus_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+  };
 }

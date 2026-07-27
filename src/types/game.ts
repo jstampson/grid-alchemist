@@ -6,16 +6,26 @@ export interface Item {
   name: string;
   icon: string;
   description: string;
+  tier: 1 | 2 | 3 | 4 | 5;
   type:
     | 'coin'
-    | 'amplifier'
-    | 'collector'
     | 'catalyst'
-    | 'vault'
-    | 'compressor'
-    | 'prism'
+    | 'hermit'
+    | 'collector'
     | 'goldmine'
     | 'smith'
+    | 'vault'
+    | 'acid'
+    | 'compressor'
+    | 'pyre'
+    | 'mosaic'
+    | 'vacuum'
+    | 'amplifier'
+    | 'prism'
+    | 'midas'
+    | 'vortex'
+    | 'philosopher_stone'
+    | 'singularity'
     | 'treasure';
   baseValue?: number;
 }
@@ -39,6 +49,7 @@ export interface GameState {
   level: number;
   isGameOver: boolean;
   isRewardPhase: boolean;
+  isExactMatch: boolean;
   rewardOptions: Item[];
   playerPool: Omit<Item, 'id'>[];
 }
