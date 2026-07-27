@@ -6,7 +6,17 @@ export interface Item {
   name: string;
   icon: string;
   description: string;
-  type: 'coin' | 'amplifier' | 'collector' | 'catalyst' | 'vault' | 'compressor';
+  type:
+    | 'coin'
+    | 'amplifier'
+    | 'collector'
+    | 'catalyst'
+    | 'vault'
+    | 'compressor'
+    | 'prism'
+    | 'goldmine'
+    | 'smith'
+    | 'treasure';
   baseValue?: number;
 }
 
