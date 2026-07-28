@@ -12,6 +12,8 @@ export interface Item {
     | 'catalyst'
     | 'hermit'
     | 'collector'
+    | 'compass'
+    | 'sprout'
     | 'goldmine'
     | 'smith'
     | 'vault'

@@ -17,18 +17,10 @@ export function calculateTargetQuota(level: number): number {
 }
 
 /**
- * Reduziertes Startdeck für Spielbeginn (3 Karten):
- * 2x Münze 🪙, 1x Katalysator 🧪
+ * Startdeck für Spielbeginn (4 unterschiedliche Karten):
+ * 1x Münze 🪙, 1x Katalysator 🧪, 1x Keimling 🌱, 1x Kompass 🧭
  */
 export const BASE_CARD_POOL: Omit<Item, 'id'>[] = [
-  {
-    type: 'coin',
-    name: 'Münze',
-    icon: '🪙',
-    description: 'Generiert +1 Basis-Ertrag.',
-    baseValue: 1,
-    tier: 1,
-  },
   {
     type: 'coin',
     name: 'Münze',
@@ -45,10 +37,28 @@ export const BASE_CARD_POOL: Omit<Item, 'id'>[] = [
     baseValue: 2,
     tier: 1,
   },
+  {
+    type: 'sprout',
+    name: 'Keimling',
+    icon: '🌱',
+    description: '+1 Basis, wächst +1/Zug (max 3).',
+    baseValue: 1,
+    tier: 1,
+  },
+  {
+    type: 'compass',
+    name: 'Kompass',
+    icon: '🧭',
+    description: '+1 Basis, +2 an Kanten/Ecken.',
+    baseValue: 1,
+    tier: 1,
+  },
 ];
 
+export const INITIAL_DECK = BASE_CARD_POOL;
+
 /**
- * Der vollständige 17-Karten-Katalog (Tiers 1 - 5).
+ * Der vollständige Karten-Katalog (Tiers 1 - 5).
  */
 export const CATALOG_POOL: Omit<Item, 'id'>[] = [
   // --- TIER 1 ---
@@ -73,6 +83,22 @@ export const CATALOG_POOL: Omit<Item, 'id'>[] = [
     name: 'Einsiedler',
     icon: '🧘',
     description: 'Basis +1 (+2 für jedes angrenzende LEERE Feld).',
+    baseValue: 1,
+    tier: 1,
+  },
+  {
+    type: 'compass',
+    name: 'Kompass',
+    icon: '🧭',
+    description: '+1 Basis, +2 an Kanten/Ecken.',
+    baseValue: 1,
+    tier: 1,
+  },
+  {
+    type: 'sprout',
+    name: 'Keimling',
+    icon: '🌱',
+    description: '+1 Basis, wächst +1/Zug (max 3).',
     baseValue: 1,
     tier: 1,
   },
@@ -206,6 +232,8 @@ export const CATALOG_POOL: Omit<Item, 'id'>[] = [
   },
 ];
 
+export const ALL_ITEMS = CATALOG_POOL;
+
 /**
  * Hilfsfunktion zur Ermittlung der 4 orthogonalen Nachbar-Indizes.
  */
@@ -252,12 +280,12 @@ export function calculateTileScore(index: number, board: BoardState): number {
 
   switch (item.type) {
     case 'coin': {
-      baseYield = 1;
+      baseYield = item.baseValue !== undefined ? item.baseValue : 1;
       break;
     }
 
     case 'treasure': {
-      baseYield = 4;
+      baseYield = item.baseValue !== undefined ? item.baseValue : 4;
       break;
     }
 
@@ -266,7 +294,8 @@ export function calculateTileScore(index: number, board: BoardState): number {
       const occupiedNeighborsCount = neighbors.reduce((count, nIdx) => {
         return board[nIdx] !== null ? count + 1 : count;
       }, 0);
-      baseYield = 2 + occupiedNeighborsCount;
+      const base = item.baseValue !== undefined ? item.baseValue : 2;
+      baseYield = base + occupiedNeighborsCount;
       break;
     }
 
@@ -275,7 +304,8 @@ export function calculateTileScore(index: number, board: BoardState): number {
       const emptyNeighborsCount = neighbors.reduce((count, nIdx) => {
         return board[nIdx] === null ? count + 1 : count;
       }, 0);
-      baseYield = 1 + 2 * emptyNeighborsCount;
+      const base = item.baseValue !== undefined ? item.baseValue : 1;
+      baseYield = base + 2 * emptyNeighborsCount;
       break;
     }
 
@@ -284,7 +314,24 @@ export function calculateTileScore(index: number, board: BoardState): number {
       const coinCount = board.reduce((count, tile) => {
         return tile?.type === 'coin' ? count + 1 : count;
       }, 0);
-      baseYield = 1 + 2 * coinCount;
+      const base = item.baseValue !== undefined ? item.baseValue : 1;
+      baseYield = base + 2 * coinCount;
+      break;
+    }
+
+    case 'compass': {
+      // Kompass: +1 Basis (+2 an Kanten/Ecken)
+      const row = Math.floor(index / 4);
+      const col = index % 4;
+      const isEdgeOrCorner = row === 0 || row === 3 || col === 0 || col === 3;
+      const base = item.baseValue !== undefined ? item.baseValue : 1;
+      baseYield = base + (isEdgeOrCorner ? 2 : 0);
+      break;
+    }
+
+    case 'sprout': {
+      // Keimling: +1 Basis, wächst +1/Zug (max 3)
+      baseYield = item.baseValue !== undefined ? item.baseValue : 1;
       break;
     }
 
@@ -560,7 +607,7 @@ export function applyItemPlacement(
 }
 
 /**
- * Führt Rundenende-Trigger aus (Goldmine, Singularität).
+ * Führt Rundenende-Trigger aus (Goldmine, Keimling-Wachstum, Singularität).
  */
 export function updateTurnEndBoard(board: BoardState): BoardState {
   let newBoard = board.map((item) => {
@@ -571,6 +618,15 @@ export function updateTurnEndBoard(board: BoardState): BoardState {
         ...item,
         baseValue: newVal,
         description: `Startet mit Ertrag = 8. Sinkt nach jedem Zug um 1 (Aktuell: ${newVal}).`,
+      };
+    }
+    if (item && item.type === 'sprout') {
+      const currentVal = item.baseValue !== undefined ? item.baseValue : 1;
+      const newVal = Math.min(3, currentVal + 1);
+      return {
+        ...item,
+        baseValue: newVal,
+        description: `+1 Basis, wächst +1/Zug (max 3, aktuell: ${newVal}).`,
       };
     }
     return item;
@@ -593,15 +649,20 @@ export function updateTurnEndBoard(board: BoardState): BoardState {
 }
 
 /**
- * Erstellt zufällig gezogene Draft-Optionen bis zum maximal freigeschalteten Tier.
+ * Erstellt zufällig gezogene Draft-Optionen.
+ * Wenn pool === CATALOG_POOL (oder filterByMaxTier === true), wird nach maxAllowedTier gefiltert.
+ * Bei Karten aus dem Spielerdeck (playerPool) wird NICHT gefiltert, damit alle Deck-Karten gezogene werden können.
  */
 export function getRandomDraftOptions(
   count = 3,
   currentLevel = 1,
-  pool: Omit<Item, 'id'>[] = CATALOG_POOL
+  pool: Omit<Item, 'id'>[] = CATALOG_POOL,
+  filterByMaxTier = pool === CATALOG_POOL
 ): Item[] {
   const maxAllowedTier = Math.min(5, Math.ceil(currentLevel / 2));
-  const availableItems = pool.filter((item) => item.tier <= maxAllowedTier);
+  const availableItems = filterByMaxTier
+    ? pool.filter((item) => item.tier <= maxAllowedTier)
+    : pool;
 
   const finalPool = availableItems.length > 0 ? availableItems : pool;
   const options: Item[] = [];
@@ -623,7 +684,7 @@ export function getRandomDraftOptions(
  * Zieht 3 Belohnungskarten bis zum maximal freigeschalteten Tier für das aktuelle Level.
  */
 export function getRandomRewardOptions(count = 3, currentLevel = 1): Item[] {
-  return getRandomDraftOptions(count, currentLevel, CATALOG_POOL);
+  return getRandomDraftOptions(count, currentLevel, CATALOG_POOL, true);
 }
 
 /**
