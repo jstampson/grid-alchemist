@@ -29,7 +29,15 @@ export interface Item {
     | 'philosopher_stone'
     | 'singularity'
     | 'treasure'
-    | 'ash';
+    | 'ash'
+    | 'recycler'
+    | 'demolition_ball'
+    | 'orb'
+    | 'magnet'
+    | 'supernova'
+    | 'world_tree'
+    | 'crystal'
+    | 'vulture';
   baseValue?: number;
 }
 

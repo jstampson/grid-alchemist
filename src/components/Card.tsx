@@ -48,7 +48,9 @@ export default function Card({
           isPulsing
             ? 'scale-110 border-amber-300 ring-4 ring-amber-400/80 bg-amber-900/40 shadow-xl shadow-amber-500/50 z-20 animate-pulse'
             : item
-            ? 'bg-gradient-to-b from-slate-800 to-slate-900 border-amber-500/40 shadow-md shadow-amber-950/20 hover:border-amber-400 hover:scale-[1.02]'
+            ? canPlace
+              ? 'bg-gradient-to-b from-slate-800 to-slate-900 border-indigo-500/80 ring-1 ring-indigo-400/50 shadow-lg hover:border-indigo-400 hover:scale-[1.03] cursor-pointer'
+              : 'bg-gradient-to-b from-slate-800 to-slate-900 border-amber-500/40 shadow-md shadow-amber-950/20 hover:border-amber-400 hover:scale-[1.02]'
             : canPlace
             ? 'bg-indigo-950/30 border-indigo-500/60 hover:border-indigo-400 hover:bg-indigo-900/40 hover:scale-[1.02] cursor-pointer ring-1 ring-indigo-500/30'
             : 'bg-slate-950/50 border-slate-800/80 hover:border-slate-700 hover:bg-slate-800/40'

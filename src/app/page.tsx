@@ -16,6 +16,7 @@ import {
 } from '@/lib/gameLogic';
 import Leaderboard from '@/components/Leaderboard';
 import Card from '@/components/Card';
+import StartModal from '@/components/StartModal';
 
 export interface ScorePopup {
   id: string;
@@ -30,7 +31,7 @@ export default function Home() {
   const [score, setScore] = useState<number>(0);
   const [level, setLevel] = useState<number>(1);
   const [targetQuota, setTargetQuota] = useState<number>(() => calculateTargetQuota(1));
-  const [currentTurn, setCurrentTurn] = useState<number>(5);
+  const [currentTurn, setCurrentTurn] = useState<number>(4);
 
   // Visual Juice & Hover Hooks
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
@@ -52,6 +53,7 @@ export default function Home() {
   const [hintMessage, setHintMessage] = useState<string | null>(null);
   const [isDeckModalOpen, setIsDeckModalOpen] = useState<boolean>(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState<boolean>(false);
+  const [rerollsLeft, setRerollsLeft] = useState<number>(1);
 
   // Group player pool by card type for inspection
   const groupedPlayerPool = playerPool.reduce<
@@ -80,7 +82,7 @@ export default function Home() {
   };
 
   /**
-   * Platziert die gewählte Karte auf einem Gitterfeld.
+   * Platziert oder überbaut die gewählte Karte auf einem Gitterfeld.
    */
   const handleCellClick = (index: number) => {
     if (isGameOver || isRewardPhase) return;
@@ -92,21 +94,29 @@ export default function Home() {
 
     setHintMessage(null);
 
+    // Sprout-Explosionsbonus beim Überbauen prüfen
+    let overwriteSproutBonus = 0;
+    if (board[index] !== null && board[index]!.type === 'sprout') {
+      overwriteSproutBonus = (board[index]!.baseValue || 1) * 2;
+    }
+
     // 1. Board & Platzierung ausführen (inkl. Placement-Trigger)
-    const { newBoard: placedBoard } = applyItemPlacement(board, index, selectedDraftItem);
+    const { newBoard: placedBoard, extraPoints } = applyItemPlacement(board, index, selectedDraftItem);
 
     // 2. Rundenende-Trigger ausführen (Goldmine, Singularität, Philosophenstein)
     const finalBoard = updateTurnEndBoard(placedBoard);
     setBoard(finalBoard);
 
     // 3. Ertrag / Score neu berechnen
-    const newScore = calculateBoardScore(finalBoard);
+    const boardYield = calculateBoardScore(finalBoard, playerPool.length);
     const prevScore = score;
+    const totalExtra = (extraPoints || 0) + overwriteSproutBonus;
+    const newScore = prevScore + boardYield + totalExtra;
     setScore(newScore);
 
     // Visual Juice 1: Floating Score Popups
     const timestamp = Date.now();
-    const placedScore = calculateTileScore(index, finalBoard);
+    const placedScore = calculateTileScore(index, finalBoard, playerPool.length);
     const scoreDiff = newScore - prevScore;
 
     const popupsToAdd: ScorePopup[] = [];
@@ -181,6 +191,17 @@ export default function Home() {
   };
 
   /**
+   * Würfelt die 3 Belohnungs-Karten für das Deck neu (1x pro Rundenende).
+   */
+  const handleRerollRewardOptions = () => {
+    if (rerollsLeft <= 0) return;
+    const newRewards = getRandomRewardOptions(3, level);
+    setRewardOptions(newRewards);
+    setHoveredCard(null);
+    setRerollsLeft((prev) => prev - 1);
+  };
+
+  /**
    * Startet das nächste Level mit dem aktualisierten Deck-Pool.
    */
   const startNextLevelWithPool = (updatedPool: Omit<Item, 'id'>[]) => {
@@ -190,7 +211,8 @@ export default function Home() {
     setPlayerPool(updatedPool);
     setLevel(nextLevel);
     setTargetQuota(nextQuota);
-    setCurrentTurn(5);
+    setCurrentTurn(4);
+    setRerollsLeft(1);
 
     setIsRewardPhase(false);
     setIsExactMatch(false);
@@ -242,7 +264,8 @@ export default function Home() {
     setScore(0);
     setLevel(1);
     setTargetQuota(calculateTargetQuota(1));
-    setCurrentTurn(5);
+    setCurrentTurn(4);
+    setRerollsLeft(1);
     setIsGameOver(false);
     setIsRewardPhase(false);
     setIsExactMatch(false);
@@ -256,19 +279,15 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-between p-4 sm:p-8 font-sans selection:bg-indigo-500 selection:text-white">
+    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-3 sm:p-4 select-none overflow-x-hidden font-sans">
       {/* Keyframe Animation for Score Popups */}
       <style jsx global>{`
         @keyframes floatUp {
           0% {
             opacity: 0;
-            transform: translateY(6px) scale(0.8);
+            transform: translateY(8px) scale(0.8);
           }
           20% {
-            opacity: 1;
-            transform: translateY(-4px) scale(1.15);
-          }
-          75% {
             opacity: 1;
             transform: translateY(-18px) scale(1);
           }
@@ -325,7 +344,7 @@ export default function Home() {
           <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
             <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Züge</span>
             <span className={`text-xl font-bold ${currentTurn <= 1 ? 'text-red-400 animate-pulse' : 'text-emerald-400'}`}>
-              {currentTurn} / 5
+              {currentTurn} / 4
             </span>
           </div>
         </section>
@@ -393,15 +412,15 @@ export default function Home() {
           );
         })()}
 
-        {/* Unten: 3 Entwurfs-Karten (Draft-Optionen) */}
+        {/* Unten: 3 Entwurfs-Karten (Hand-Optionen) */}
         <footer className="w-full space-y-2">
           <div className="flex items-center justify-between px-1">
             <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-              Karten-Entwurf (Wähle 1 Karte)
+              Karten-Hand (Wähle 1 Karte)
             </h2>
             {selectedDraftItem && (
               <span className="text-[10px] text-indigo-400 font-medium animate-pulse">
-                Platziere Karte!
+                Platziere/Überbaue Kachel!
               </span>
             )}
           </div>
@@ -508,26 +527,41 @@ export default function Home() {
             </div>
 
             {/* Zentrale Karten-Detail-Leiste (Infobox in der Belohnungs-Phase) */}
-            <div className="w-full bg-slate-900/90 border border-amber-500/40 p-2.5 rounded-xl shadow-lg backdrop-blur-sm min-h-[56px] flex items-center gap-3 transition-all text-left my-1">
-              {hoveredCard ? (
-                <>
-                  <span className="text-3xl filter drop-shadow flex-shrink-0">{hoveredCard.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold text-amber-300 truncate">{hoveredCard.name}</span>
-                      <span className="text-[9px] font-bold text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 rounded">
-                        Tier {hoveredCard.tier}
-                      </span>
+            <div className="w-full bg-slate-900/90 border border-amber-500/40 p-2.5 rounded-xl shadow-lg backdrop-blur-sm flex flex-col gap-2 text-left my-1">
+              <div className="flex items-center gap-3 min-h-[48px]">
+                {hoveredCard ? (
+                  <>
+                    <span className="text-3xl filter drop-shadow flex-shrink-0">{hoveredCard.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-extrabold text-amber-300 truncate">{hoveredCard.name}</span>
+                        <span className="text-[9px] font-bold text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 rounded">
+                          Tier {hoveredCard.tier}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-tight font-medium mt-0.5">
+                        {hoveredCard.description}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-slate-300 leading-tight font-medium mt-0.5">
-                      {hoveredCard.description}
-                    </p>
+                  </>
+                ) : (
+                  <div className="w-full text-center text-[11px] text-slate-500 italic py-1">
+                    Hovere oder tippe eine Karte an, um Effekte zu sehen
                   </div>
-                </>
-              ) : (
-                <div className="w-full text-center text-[11px] text-slate-500 italic py-1">
-                  Hovere oder tippe eine Karte an, um Effekte zu sehen
-                </div>
+                )}
+              </div>
+
+              {/* Bestätigungs-Button nach dem 1. Tap/Klick */}
+              {hoveredCard && rewardTab === 'choose' && (
+                <button
+                  onClick={() => {
+                    handlePickRewardCard(hoveredCard);
+                    setHoveredCard(null);
+                  }}
+                  className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 animate-in fade-in zoom-in-95"
+                >
+                  <span>✅</span> {hoveredCard.name} wählen & Level {level + 1} starten →
+                </button>
               )}
             </div>
 
@@ -551,20 +585,41 @@ export default function Home() {
 
             {rewardTab === 'choose' && (
               <div className="space-y-2 my-1">
-                <p className="text-[11px] text-emerald-300 font-medium">
-                  Klicke auf 1 Karte, um sie dem Deck hinzuzufügen und Level {level + 1} zu starten:
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] text-emerald-300 font-medium">
+                    1 Neue Karte für dein Deck wählen:
+                  </p>
+                  <button
+                    onClick={handleRerollRewardOptions}
+                    disabled={rerollsLeft <= 0}
+                    className="px-2.5 py-0.5 rounded-full bg-indigo-950/90 border border-indigo-500/60 text-[10px] font-bold text-indigo-300 hover:bg-indigo-900 hover:scale-105 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center gap-1 shadow-sm"
+                    title="1x pro Rundenende: 3 neue Belohnungs-Karten würfeln"
+                  >
+                    🎲 Reroll ({rerollsLeft}x)
+                  </button>
+                </div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  {rewardOptions.map((rewardCard) => (
-                    <Card
-                      key={rewardCard.id}
-                      item={rewardCard}
-                      onClick={() => handlePickRewardCard(rewardCard)}
-                      onHover={setHoveredCard}
-                      variant="reward"
-                    />
-                  ))}
+                  {rewardOptions.map((rewardCard) => {
+                    const isSelected = hoveredCard?.id === rewardCard.id;
+                    return (
+                      <Card
+                        key={rewardCard.id}
+                        item={rewardCard}
+                        isSelected={isSelected}
+                        onClick={() => {
+                          if (hoveredCard?.id === rewardCard.id) {
+                            handlePickRewardCard(rewardCard);
+                            setHoveredCard(null);
+                          } else {
+                            setHoveredCard(rewardCard);
+                          }
+                        }}
+                        onHover={setHoveredCard}
+                        variant="reward"
+                      />
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -708,6 +763,9 @@ export default function Home() {
         currentRunScore={isGameOver ? score : undefined}
         currentRunLevel={isGameOver ? level : undefined}
       />
+
+      {/* START TUTORIAL MODAL OVERLAY */}
+      <StartModal />
     </main>
   );
 }
