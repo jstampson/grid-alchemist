@@ -28,7 +28,8 @@ export interface Item {
     | 'vortex'
     | 'philosopher_stone'
     | 'singularity'
-    | 'treasure';
+    | 'treasure'
+    | 'ash';
   baseValue?: number;
 }
 

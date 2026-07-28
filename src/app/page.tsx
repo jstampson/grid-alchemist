@@ -12,7 +12,17 @@ import {
   getRandomDraftOptions,
   getRandomRewardOptions,
   getRandomTier5BonusCard,
+  getAdjacentIndices,
 } from '@/lib/gameLogic';
+import Leaderboard from '@/components/Leaderboard';
+import Card from '@/components/Card';
+
+export interface ScorePopup {
+  id: string;
+  tileIndex: number;
+  text: string;
+  color?: string;
+}
 
 export default function Home() {
   // Game State Hooks
@@ -22,12 +32,17 @@ export default function Home() {
   const [targetQuota, setTargetQuota] = useState<number>(() => calculateTargetQuota(1));
   const [currentTurn, setCurrentTurn] = useState<number>(5);
 
+  // Visual Juice & Hover Hooks
+  const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
+  const [pulsingTiles, setPulsingTiles] = useState<number[]>([]);
+  const [hoveredCard, setHoveredCard] = useState<Item | null>(null);
+
   // Karten-Pool & Draft
   const [playerPool, setPlayerPool] = useState<Omit<Item, 'id'>[]>(BASE_CARD_POOL);
   const [draftOptions, setDraftOptions] = useState<Item[]>([]);
   const [selectedDraftItem, setSelectedDraftItem] = useState<Item | null>(null);
 
-  // Modals & Punktlandung Status
+  // Modals & Status
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
   const [isRewardPhase, setIsRewardPhase] = useState<boolean>(false);
   const [isExactMatch, setIsExactMatch] = useState<boolean>(false);
@@ -35,6 +50,20 @@ export default function Home() {
   const [rewardTab, setRewardTab] = useState<'choose' | 'burn' | 'bonus'>('choose');
 
   const [hintMessage, setHintMessage] = useState<string | null>(null);
+  const [isDeckModalOpen, setIsDeckModalOpen] = useState<boolean>(false);
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState<boolean>(false);
+
+  // Group player pool by card type for inspection
+  const groupedPlayerPool = playerPool.reduce<
+    Record<string, { count: number; item: Omit<Item, 'id'> }>
+  >((acc, card) => {
+    if (!acc[card.type]) {
+      acc[card.type] = { count: 1, item: card };
+    } else {
+      acc[card.type].count += 1;
+    }
+    return acc;
+  }, {});
 
   // Initialisierung beim ersten Laden
   useEffect(() => {
@@ -66,13 +95,70 @@ export default function Home() {
     // 1. Board & Platzierung ausführen (inkl. Placement-Trigger)
     const { newBoard: placedBoard } = applyItemPlacement(board, index, selectedDraftItem);
 
-    // 2. Rundenende-Trigger ausführen (Goldmine, Singularität)
+    // 2. Rundenende-Trigger ausführen (Goldmine, Singularität, Philosophenstein)
     const finalBoard = updateTurnEndBoard(placedBoard);
     setBoard(finalBoard);
 
     // 3. Ertrag / Score neu berechnen
     const newScore = calculateBoardScore(finalBoard);
+    const prevScore = score;
     setScore(newScore);
+
+    // Visual Juice 1: Floating Score Popups
+    const timestamp = Date.now();
+    const placedScore = calculateTileScore(index, finalBoard);
+    const scoreDiff = newScore - prevScore;
+
+    const popupsToAdd: ScorePopup[] = [];
+    const targetScoreText = placedScore > 0 ? `+${placedScore}!` : scoreDiff > 0 ? `+${scoreDiff}!` : '✨!';
+
+    popupsToAdd.push({
+      id: `popup_${index}_${timestamp}`,
+      tileIndex: index,
+      text: targetScoreText,
+      color:
+        selectedDraftItem.type === 'midas' || selectedDraftItem.type === 'amplifier' || selectedDraftItem.type === 'compressor'
+          ? 'text-amber-300 border-amber-400 bg-amber-950/95 shadow-amber-500/60 ring-2 ring-amber-400'
+          : selectedDraftItem.type === 'pyre' || selectedDraftItem.type === 'acid'
+          ? 'text-orange-300 border-orange-400 bg-orange-950/95 shadow-orange-500/60 ring-2 ring-orange-400'
+          : 'text-emerald-300 border-emerald-400 bg-emerald-950/95 shadow-emerald-500/60 ring-2 ring-emerald-400',
+    });
+
+    const neighbors = getAdjacentIndices(index);
+    for (const nIdx of neighbors) {
+      const nScore = calculateTileScore(nIdx, finalBoard);
+      if (nScore > 0 && finalBoard[nIdx] !== null) {
+        popupsToAdd.push({
+          id: `popup_${nIdx}_${timestamp}`,
+          tileIndex: nIdx,
+          text: `+${nScore}!`,
+          color: 'text-yellow-300 border-yellow-400 bg-yellow-950/90 shadow-yellow-500/50',
+        });
+      }
+    }
+
+    setScorePopups((prev) => [...prev, ...popupsToAdd]);
+    setTimeout(() => {
+      setScorePopups((prev) => prev.filter((p) => !popupsToAdd.some((added) => added.id === p.id)));
+    }, 1000);
+
+    // Visual Juice 2: Multiplier Pulse Effect
+    const highlightIndices = [index];
+    if (
+      selectedDraftItem.type === 'amplifier' ||
+      selectedDraftItem.type === 'midas' ||
+      selectedDraftItem.type === 'compressor' ||
+      selectedDraftItem.type === 'philosopher_stone' ||
+      selectedDraftItem.type === 'pyre' ||
+      selectedDraftItem.type === 'collector'
+    ) {
+      highlightIndices.push(...neighbors);
+    }
+
+    setPulsingTiles(highlightIndices);
+    setTimeout(() => {
+      setPulsingTiles([]);
+    }, 800);
 
     // 4. Züge verringern & Entwurfs-Karten zurücksetzen
     const newTurn = currentTurn - 1;
@@ -162,6 +248,8 @@ export default function Home() {
     setIsExactMatch(false);
     setSelectedDraftItem(null);
     setHintMessage(null);
+    setScorePopups([]);
+    setPulsingTiles([]);
 
     setPlayerPool(BASE_CARD_POOL);
     setDraftOptions(getRandomDraftOptions(3, 1, BASE_CARD_POOL));
@@ -169,12 +257,50 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-between p-4 sm:p-8 font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Keyframe Animation for Score Popups */}
+      <style jsx global>{`
+        @keyframes floatUp {
+          0% {
+            opacity: 0;
+            transform: translateY(6px) scale(0.8);
+          }
+          20% {
+            opacity: 1;
+            transform: translateY(-4px) scale(1.15);
+          }
+          75% {
+            opacity: 1;
+            transform: translateY(-18px) scale(1);
+          }
+          100% {
+            opacity: 0;
+            transform: translateY(-28px) scale(0.85);
+          }
+        }
+      `}</style>
+
       <div className="w-full max-w-md flex flex-col items-center gap-5 my-auto relative">
         
-        {/* Spieltitel & Level-Badge */}
+        {/* Spieltitel & Level-Badge & Deck Inspect Button */}
         <header className="text-center space-y-1">
-          <div className="inline-block px-2.5 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-800/60 text-[11px] font-semibold text-indigo-300 mb-1">
-            Level {level} (Max Tier {Math.min(5, Math.ceil(level / 2))})
+          <div className="flex items-center justify-center gap-2 mb-1 flex-wrap">
+            <span className="px-2.5 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-800/60 text-[11px] font-semibold text-indigo-300">
+              Level {level} (Max Tier {Math.min(5, Math.ceil(level / 2))})
+            </span>
+            <button
+              onClick={() => setIsDeckModalOpen(true)}
+              className="px-2.5 py-0.5 rounded-full bg-amber-950/90 border border-amber-500/60 text-[11px] font-bold text-amber-300 hover:bg-amber-900 hover:scale-105 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+              title="Dein aktuelles Kartendeck ansehen"
+            >
+              🎴 Deck ({playerPool.length})
+            </button>
+            <button
+              onClick={() => setIsLeaderboardOpen(true)}
+              className="px-2.5 py-0.5 rounded-full bg-indigo-950/90 border border-indigo-500/60 text-[11px] font-bold text-indigo-300 hover:bg-indigo-900 hover:scale-105 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+              title="Bestenliste ansehen"
+            >
+              🏆 Bestenliste
+            </button>
           </div>
           <h1 className="text-3xl font-extrabold tracking-wider bg-gradient-to-r from-amber-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent drop-shadow-sm">
             Grid Alchemist
@@ -215,55 +341,57 @@ export default function Home() {
         <section className="w-full aspect-square bg-slate-900/80 border border-slate-800 p-3 rounded-2xl shadow-2xl backdrop-blur-sm flex flex-col justify-center">
           <div className="grid grid-cols-4 gap-2 h-full w-full">
             {board.map((item, index) => {
-              const isEmpty = item === null;
               const canPlace = selectedDraftItem !== null && !isGameOver && !isRewardPhase;
               const tileScore = item ? calculateTileScore(index, board) : 0;
+              const isPulsing = pulsingTiles.includes(index);
+              const activePopups = scorePopups.filter((p) => p.tileIndex === index);
 
               return (
-                <button
+                <Card
                   key={index}
+                  item={item}
+                  tileScore={tileScore}
+                  isPulsing={isPulsing}
+                  canPlace={canPlace}
+                  isDisabled={isGameOver || isRewardPhase}
                   onClick={() => handleCellClick(index)}
-                  disabled={isGameOver || isRewardPhase}
-                  aria-label={item ? `${item.name} auf Feld ${index + 1} (+${tileScore} Punkte)` : `Leeres Feld ${index + 1}`}
-                  className={`group relative flex flex-col items-center justify-center rounded-xl border transition-all duration-200 select-none ${
-                    item
-                      ? 'bg-gradient-to-b from-slate-800 to-slate-900 border-amber-500/40 shadow-md shadow-amber-950/20 hover:border-amber-400 hover:scale-[1.02]'
-                      : canPlace
-                      ? 'bg-indigo-950/30 border-indigo-500/60 hover:border-indigo-400 hover:bg-indigo-900/40 hover:scale-[1.02] cursor-pointer ring-1 ring-indigo-500/30'
-                      : 'bg-slate-950/50 border-slate-800/80 hover:border-slate-700 hover:bg-slate-800/40'
-                  }`}
-                >
-                  {/* Punktzahl-Badge oben rechts */}
-                  {item && (
-                    <span className="absolute top-1 right-1 bg-emerald-600/90 text-white text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full font-bold shadow-sm border border-emerald-400/30 z-10 leading-none">
-                      +{tileScore}
-                    </span>
-                  )}
-
-                  {/* Tier Badge oben links */}
-                  {item && (
-                    <span className="absolute top-1 left-1 text-[9px] font-bold text-amber-400/80">
-                      T{item.tier}
-                    </span>
-                  )}
-
-                  {item ? (
-                    <div className="flex flex-col items-center justify-center p-1 text-center animate-in fade-in zoom-in-95 duration-150">
-                      <span className="text-2xl sm:text-3xl filter drop-shadow">{item.icon}</span>
-                      <span className="text-[10px] font-semibold text-amber-200/90 mt-0.5 leading-none truncate max-w-[55px]">
-                        {item.name}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className={`text-xs font-mono transition-colors ${canPlace ? 'text-indigo-400 group-hover:scale-125' : 'text-slate-700 group-hover:text-slate-500'}`}>
-                      +
-                    </span>
-                  )}
-                </button>
+                  onHover={setHoveredCard}
+                  popups={activePopups}
+                  variant="board"
+                />
               );
             })}
           </div>
         </section>
+
+        {/* Zentrale Karten-Detail-Leiste (Infobox für Hover & Touch/Mobile) */}
+        {(() => {
+          const focusedItem = hoveredCard || selectedDraftItem;
+          return (
+            <div className="w-full bg-slate-900/90 border border-amber-500/40 p-2.5 rounded-xl shadow-lg backdrop-blur-sm min-h-[56px] flex items-center gap-3 transition-all">
+              {focusedItem ? (
+                <>
+                  <span className="text-3xl filter drop-shadow flex-shrink-0">{focusedItem.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-amber-300 truncate">{focusedItem.name}</span>
+                      <span className="text-[9px] font-bold text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 rounded">
+                        Tier {focusedItem.tier}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-tight font-medium mt-0.5">
+                      {focusedItem.description}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="w-full text-center text-[11px] text-slate-500 italic py-1">
+                  Hovere oder tippe eine Karte an, um Effekte zu sehen
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Unten: 3 Entwurfs-Karten (Draft-Optionen) */}
         <footer className="w-full space-y-2">
@@ -273,7 +401,7 @@ export default function Home() {
             </h2>
             {selectedDraftItem && (
               <span className="text-[10px] text-indigo-400 font-medium animate-pulse">
-                Klicke ein Feld zum Platzieren!
+                Platziere Karte!
               </span>
             )}
           </div>
@@ -283,29 +411,15 @@ export default function Home() {
               const isSelected = selectedDraftItem?.id === card.id;
 
               return (
-                <button
+                <Card
                   key={card.id}
+                  item={card}
+                  isSelected={isSelected}
+                  isDisabled={isGameOver || isRewardPhase}
                   onClick={() => handleSelectDraftCard(card)}
-                  disabled={isGameOver || isRewardPhase}
-                  className={`group relative flex flex-col items-center p-2.5 rounded-xl border text-left transition-all duration-200 cursor-pointer ${
-                    isSelected
-                      ? 'bg-gradient-to-b from-indigo-900/90 to-indigo-950/90 border-indigo-400 ring-2 ring-indigo-500/50 scale-105 shadow-xl shadow-indigo-950/60'
-                      : 'bg-slate-900/90 border-slate-800 hover:border-indigo-500/50 hover:bg-slate-850 hover:-translate-y-0.5'
-                  }`}
-                >
-                  <span className="absolute top-1 right-1.5 text-[8px] font-bold text-amber-400/80">
-                    T{card.tier}
-                  </span>
-                  <span className="text-2xl mb-1 group-hover:scale-110 transition-transform duration-200">
-                    {card.icon}
-                  </span>
-                  <span className="text-xs font-bold text-slate-100 text-center leading-tight">
-                    {card.name}
-                  </span>
-                  <span className="text-[9px] text-slate-400 text-center mt-1 leading-tight line-clamp-2">
-                    {card.description}
-                  </span>
-                </button>
+                  onHover={setHoveredCard}
+                  variant="draft"
+                />
               );
             })}
           </div>
@@ -335,16 +449,24 @@ export default function Home() {
                 </>
               )}
 
-              <p className="text-[11px] text-slate-400 mt-1 font-medium">
-                Wähle genau <span className="text-amber-300 font-bold">1 Option</span> für dein Deck:
-              </p>
+              <div className="flex items-center justify-between mt-2">
+                <p className="text-[11px] text-slate-400 font-medium">
+                  Wähle genau <span className="text-amber-300 font-bold">1 Option</span> für dein Deck:
+                </p>
+                <button
+                  onClick={() => setIsDeckModalOpen(true)}
+                  className="text-[10px] text-amber-300 font-bold bg-amber-950/60 border border-amber-500/50 px-2 py-0.5 rounded-full hover:bg-amber-900 transition-all"
+                >
+                  🎴 Deck ({playerPool.length})
+                </button>
+              </div>
             </div>
 
             {/* TAB-NAVIGATION */}
             <div className={`grid ${isExactMatch ? 'grid-cols-4' : 'grid-cols-3'} gap-1 p-1 bg-slate-900 rounded-xl border border-slate-800 my-2`}>
               {isExactMatch && (
                 <button
-                  onClick={() => setRewardTab('bonus')}
+                  onClick={() => { setRewardTab('bonus'); setHoveredCard(null); }}
                   className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer ${
                     rewardTab === 'bonus'
                       ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 shadow-md'
@@ -356,7 +478,7 @@ export default function Home() {
               )}
 
               <button
-                onClick={() => setRewardTab('choose')}
+                onClick={() => { setRewardTab('choose'); setHoveredCard(null); }}
                 className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   rewardTab === 'choose'
                     ? 'bg-emerald-600 text-white shadow-md'
@@ -367,7 +489,7 @@ export default function Home() {
               </button>
 
               <button
-                onClick={() => setRewardTab('burn')}
+                onClick={() => { setRewardTab('burn'); setHoveredCard(null); }}
                 className={`py-1.5 px-1 rounded-lg text-[10px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   rewardTab === 'burn'
                     ? 'bg-red-600 text-white shadow-md'
@@ -383,6 +505,30 @@ export default function Home() {
               >
                 ⏩ Weiter
               </button>
+            </div>
+
+            {/* Zentrale Karten-Detail-Leiste (Infobox in der Belohnungs-Phase) */}
+            <div className="w-full bg-slate-900/90 border border-amber-500/40 p-2.5 rounded-xl shadow-lg backdrop-blur-sm min-h-[56px] flex items-center gap-3 transition-all text-left my-1">
+              {hoveredCard ? (
+                <>
+                  <span className="text-3xl filter drop-shadow flex-shrink-0">{hoveredCard.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-amber-300 truncate">{hoveredCard.name}</span>
+                      <span className="text-[9px] font-bold text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 rounded">
+                        Tier {hoveredCard.tier}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-tight font-medium mt-0.5">
+                      {hoveredCard.description}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="w-full text-center text-[11px] text-slate-500 italic py-1">
+                  Hovere oder tippe eine Karte an, um Effekte zu sehen
+                </div>
+              )}
             </div>
 
             {/* CONTENT ANZEIGE NACH AKTIVEM TAB */}
@@ -411,24 +557,13 @@ export default function Home() {
 
                 <div className="grid grid-cols-3 gap-2">
                   {rewardOptions.map((rewardCard) => (
-                    <button
+                    <Card
                       key={rewardCard.id}
+                      item={rewardCard}
                       onClick={() => handlePickRewardCard(rewardCard)}
-                      className="group relative flex flex-col items-center p-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-400 hover:bg-emerald-950/30 hover:scale-105 transition-all cursor-pointer"
-                    >
-                      <span className="absolute top-1 right-1.5 text-[8px] font-bold text-amber-400/80">
-                        T{rewardCard.tier}
-                      </span>
-                      <span className="text-2xl mb-1 group-hover:scale-110 transition-transform">
-                        {rewardCard.icon}
-                      </span>
-                      <span className="text-xs font-bold text-emerald-300 text-center leading-tight">
-                        {rewardCard.name}
-                      </span>
-                      <span className="text-[8px] text-slate-300 text-center mt-1 leading-tight line-clamp-3">
-                        {rewardCard.description}
-                      </span>
-                    </button>
+                      onHover={setHoveredCard}
+                      variant="reward"
+                    />
                   ))}
                 </div>
               </div>
@@ -445,6 +580,8 @@ export default function Home() {
                     <button
                       key={idx}
                       onClick={() => handleBurnCardFromPool(idx)}
+                      onMouseEnter={() => setHoveredCard(card as Item)}
+                      onMouseLeave={() => setHoveredCard(null)}
                       disabled={playerPool.length <= 1}
                       className="group relative flex flex-col items-center p-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-red-500 hover:bg-red-950/40 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -478,16 +615,99 @@ export default function Home() {
             <p className="text-xs text-slate-300 mb-4 max-w-xs">
               Die Züge sind abgelaufen. Du hast <span className="font-bold text-amber-300">{score}</span> von benötigten <span className="font-bold text-indigo-300">{targetQuota}</span> Punkten erzielt.
             </p>
-            <button
-              onClick={handleRestart}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 font-bold hover:from-amber-400 hover:to-orange-500 transition-all shadow-lg shadow-amber-950/40 hover:scale-105 active:scale-95 cursor-pointer"
-            >
-              🔄 Erneut versuchen (Neustart)
-            </button>
+            <div className="flex flex-col gap-2.5 w-full max-w-xs">
+              <button
+                onClick={() => setIsLeaderboardOpen(true)}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-extrabold hover:from-amber-400 hover:to-yellow-400 transition-all shadow-lg cursor-pointer"
+              >
+                🏆 Score eintragen & Bestenliste
+              </button>
+              <button
+                onClick={handleRestart}
+                className="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all cursor-pointer"
+              >
+                🔄 Erneut versuchen (Neustart)
+              </button>
+            </div>
           </div>
         )}
 
       </div>
+
+      {/* DECK INSPECTION MODAL OVERLAY */}
+      {isDeckModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 flex flex-col max-h-[85vh] overflow-hidden relative">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">🎴</span>
+                <div>
+                  <h2 className="text-base font-extrabold text-amber-300 leading-tight">Dein Kartendeck</h2>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Insgesamt <span className="text-emerald-400 font-bold">{playerPool.length} Karten</span> ({Object.keys(groupedPlayerPool).length} verschiedene Typen)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDeckModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center font-bold text-sm transition-all cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Cards List grouped by Type */}
+            <div className="py-4 overflow-y-auto space-y-2.5 flex-1 pr-1">
+              {Object.values(groupedPlayerPool).map(({ count, item }) => (
+                <div
+                  key={item.type}
+                  className="flex items-center justify-between p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-amber-500/40 transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <span className="text-3xl filter drop-shadow">{item.icon}</span>
+                      <span className="absolute -top-1.5 -right-2 bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full border border-amber-300 shadow-sm">
+                        {count}x
+                      </span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-extrabold text-slate-100">{item.name}</span>
+                        <span className="text-[9px] font-bold text-amber-400/90 bg-amber-950/60 border border-amber-800/60 px-1 rounded">
+                          T{item.tier}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-3 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setIsDeckModalOpen(false)}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer"
+              >
+                Fertig / Zurück zum Spiel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LEADERBOARD MODAL OVERLAY */}
+      <Leaderboard
+        isOpen={isLeaderboardOpen}
+        onClose={() => setIsLeaderboardOpen(false)}
+        currentRunScore={isGameOver ? score : undefined}
+        currentRunLevel={isGameOver ? level : undefined}
+      />
     </main>
   );
 }
