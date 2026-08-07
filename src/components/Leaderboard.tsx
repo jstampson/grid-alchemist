@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export interface HighscoreEntry {
   id: string;
@@ -66,14 +66,15 @@ export default function Leaderboard({
   const [hasSubmitted, setHasSubmitted] = useState<boolean>(false);
   const [isLoadingGlobal, setIsLoadingGlobal] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      setLocalScores(getLocalHighscores());
-      fetchGlobalScores();
-    }
-  }, [isOpen]);
+  const [wasOpen, setWasOpen] = useState<boolean>(false);
+  if (isOpen && !wasOpen) {
+    setWasOpen(true);
+    setLocalScores(getLocalHighscores());
+  } else if (!isOpen && wasOpen) {
+    setWasOpen(false);
+  }
 
-  const fetchGlobalScores = async () => {
+  const fetchGlobalScores = useCallback(async () => {
     setIsLoadingGlobal(true);
     try {
       const res = await fetch('/api/highscores');
@@ -86,7 +87,15 @@ export default function Leaderboard({
     } finally {
       setIsLoadingGlobal(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      queueMicrotask(() => {
+        fetchGlobalScores();
+      });
+    }
+  }, [isOpen, fetchGlobalScores]);
 
   const handleSubmitScore = async (e: React.FormEvent) => {
     e.preventDefault();

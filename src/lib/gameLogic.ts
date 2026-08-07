@@ -1,24 +1,24 @@
-import { Item, BoardState } from '@/types/game';
+import { Item, BoardState, TileScoreBreakdown, ScoreBreakdownStep } from '@/types/game';
 import { BASE_CARD_POOL, INITIAL_DECK, CATALOG_POOL } from '@/lib/cards';
 
 export { BASE_CARD_POOL, INITIAL_DECK, CATALOG_POOL };
 
 /**
- * Quota-Berechnung für 4-Züge-Runden (fair & knackig):
- * Runde 1: 30
- * Runde 2: 90
- * Runde 3: 250
- * Runde 4: 650
- * Runde 5: 1.600
- * Runde 6+: Math.floor(1600 * Math.pow(1.8, level - 5))
+ * Drastisch gesenkte Quota-Berechnung für Live-Board + Sofort-Punkte Scoring:
+ * Runde 1: 15
+ * Runde 2: 35
+ * Runde 3: 80
+ * Runde 4: 180
+ * Runde 5: 400
+ * Runde 6+: Math.floor(400 * Math.pow(1.8, level - 5))
  */
 export function calculateTargetQuota(level: number): number {
-  if (level === 1) return 30;
-  if (level === 2) return 90;
-  if (level === 3) return 250;
-  if (level === 4) return 650;
-  if (level === 5) return 1600;
-  return Math.floor(1600 * Math.pow(1.8, level - 5));
+  if (level === 1) return 15;
+  if (level === 2) return 35;
+  if (level === 3) return 80;
+  if (level === 4) return 180;
+  if (level === 5) return 400;
+  return Math.floor(400 * Math.pow(1.8, level - 5));
 }
 
 /**
@@ -82,13 +82,11 @@ export function calculateTileScore(index: number, board: BoardState, playerPoolL
     }
 
     case 'catalyst': {
-      // Katalysator (Tier 3): Basis 2
       baseYield = item.baseValue !== undefined ? item.baseValue : 2;
       break;
     }
 
     case 'hermit': {
-      // Einsiedler (Tier 2): Erhält +3 Pkt für JEDE leere Kachel auf dem gesamten Board. Darf keine direkten Nachbarn haben!
       const occupiedNeighborsCount = neighbors.reduce((count, nIdx) => {
         return board[nIdx] !== null ? count + 1 : count;
       }, 0);
@@ -135,7 +133,6 @@ export function calculateTileScore(index: number, board: BoardState, playerPoolL
     }
 
     case 'vault': {
-      // Tresor (Tier 4): +15 Pkt pro Karte im Deck, x2 auf das eigene Feld
       const deckBonus = playerPoolLength * 15;
       baseYield = deckBonus * 2;
       break;
@@ -240,7 +237,6 @@ export function calculateTileScore(index: number, board: BoardState, playerPoolL
     }
 
     case 'crystal': {
-      // Resonanz-Kristall (Tier 1): Basis 1 + 2 Pkt pro Karte des am häufigsten vertretenen Kartentyps auf dem Board
       const typeCounts: Record<string, number> = {};
       let maxCount = 0;
       for (const tile of board) {
@@ -252,6 +248,11 @@ export function calculateTileScore(index: number, board: BoardState, playerPoolL
         }
       }
       baseYield = 1 + maxCount * 2;
+      break;
+    }
+
+    case 'vulture': {
+      baseYield = item.baseValue !== undefined ? item.baseValue : 0;
       break;
     }
 
@@ -316,6 +317,196 @@ export function calculateTileScore(index: number, board: BoardState, playerPoolL
 }
 
 /**
+ * Erstellt eine exakt aufgeschlüsselte Punkteberechnung für volle Transparenz im UI.
+ */
+export function getTileScoreBreakdown(
+  index: number,
+  board: BoardState,
+  playerPoolLength: number = 4
+): TileScoreBreakdown {
+  const item = board[index];
+  if (!item) {
+    return { totalScore: 0, steps: [] };
+  }
+
+  const steps: ScoreBreakdownStep[] = [];
+  const neighbors = getAdjacentIndices(index);
+  let currentYield = 0;
+
+  switch (item.type) {
+    case 'coin': {
+      const base = item.baseValue !== undefined ? item.baseValue : 1;
+      const hasAdjacentCoinOrCollector = neighbors.some((nIdx) => {
+        const nItem = board[nIdx];
+        return nItem?.type === 'coin' || nItem?.type === 'collector';
+      });
+
+      steps.push({ text: `Basis: ${base} Pkt`, type: 'base' });
+      if (hasAdjacentCoinOrCollector) {
+        steps.push({ text: `Münze/Sammler: x2`, type: 'multiplier' });
+        currentYield = base * 2;
+      } else {
+        currentYield = base;
+      }
+      break;
+    }
+
+    case 'collector': {
+      const coinCount = board.reduce((count, tile) => (tile?.type === 'coin' ? count + 1 : count), 0);
+      const base = item.baseValue !== undefined ? item.baseValue : 1;
+      let yieldVal = base + 2 * coinCount;
+      steps.push({ text: `Basis ${base} + (${coinCount} Münzen x 2 Pkt)`, type: 'base' });
+
+      if (coinCount >= 3) {
+        steps.push({ text: `3+ Münzen: x2`, type: 'multiplier' });
+        yieldVal *= 2;
+      }
+      currentYield = yieldVal;
+      break;
+    }
+
+    case 'hermit': {
+      const occupiedNeighborsCount = neighbors.reduce((count, nIdx) => (board[nIdx] !== null ? count + 1 : count), 0);
+      if (occupiedNeighborsCount > 0) {
+        steps.push({ text: `Blockiert durch Nachbarn (0 Pkt)`, type: 'base' });
+        currentYield = 0;
+      } else {
+        const emptyBoardCount = board.reduce((count, tile) => (tile === null ? count + 1 : count), 0);
+        currentYield = emptyBoardCount * 3;
+        steps.push({ text: `Isolation (${emptyBoardCount} leere Felder x 3 Pkt)`, type: 'base' });
+      }
+      break;
+    }
+
+    case 'vault': {
+      const deckBonus = playerPoolLength * 15;
+      steps.push({ text: `Deck-Bonus (${playerPoolLength} Karten x 15 Pkt)`, type: 'base' });
+      steps.push({ text: `Eigenes Kachel-Feld: x2`, type: 'multiplier' });
+      currentYield = deckBonus * 2;
+      break;
+    }
+
+    case 'world_tree': {
+      const occupiedCount = board.reduce((count, tile) => (tile !== null ? count + 1 : count), 0);
+      const base = item.baseValue !== undefined ? item.baseValue : 10;
+      currentYield = base + occupiedCount * 10;
+      steps.push({ text: `Weltenbaum ${base} + (${occupiedCount} besetzte Felder x 10 Pkt)`, type: 'base' });
+      break;
+    }
+
+    case 'mosaic': {
+      const uniqueTypes = new Set<string>();
+      for (const tile of board) {
+        if (tile) uniqueTypes.add(tile.type);
+      }
+      currentYield = 4 * uniqueTypes.size;
+      steps.push({ text: `Mosaik (${uniqueTypes.size} Typen x 4 Pkt)`, type: 'base' });
+      break;
+    }
+
+    case 'vacuum': {
+      const emptyCount = board.reduce((count, tile) => (tile === null ? count + 1 : count), 0);
+      currentYield = 4 * emptyCount;
+      steps.push({ text: `Vakuum (${emptyCount} leere Felder x 4 Pkt)`, type: 'base' });
+      break;
+    }
+
+    case 'magnet': {
+      const neighborSum = neighbors.reduce((sum, nIdx) => {
+        return board[nIdx] !== null ? sum + (board[nIdx]!.baseValue || 1) : sum;
+      }, 0);
+      const base = item.baseValue !== undefined ? item.baseValue : 2;
+      currentYield = (base + neighborSum) * 3;
+      steps.push({ text: `Basis ${base} + Nachbarn (+${neighborSum})`, type: 'base' });
+      steps.push({ text: `Magnet: x3`, type: 'multiplier' });
+      break;
+    }
+
+    case 'crystal': {
+      const typeCounts: Record<string, number> = {};
+      let maxCount = 0;
+      for (const tile of board) {
+        if (tile) {
+          typeCounts[tile.type] = (typeCounts[tile.type] || 0) + 1;
+          if (typeCounts[tile.type] > maxCount) {
+            maxCount = typeCounts[tile.type];
+          }
+        }
+      }
+      currentYield = 1 + maxCount * 2;
+      steps.push({ text: `Basis 1 + (Häufigster Typ ${maxCount}x = +${maxCount * 2} Pkt)`, type: 'base' });
+      break;
+    }
+
+    case 'vulture': {
+      const val = item.baseValue !== undefined ? item.baseValue : 0;
+      currentYield = val;
+      steps.push({ text: `Aasgeier Bonus: +${val} Pkt`, type: 'base' });
+      break;
+    }
+
+    default: {
+      const base = item.baseValue !== undefined ? item.baseValue : 1;
+      currentYield = base;
+      steps.push({ text: `Basis: ${base} Pkt`, type: 'base' });
+      break;
+    }
+  }
+
+  // 2. Post-Processing Buffs & Multiplikatoren
+  const adjacentAshCount = neighbors.reduce((count, nIdx) => (board[nIdx]?.type === 'ash' ? count + 1 : count), 0);
+  if (adjacentAshCount > 0) {
+    const ashAdd = adjacentAshCount * 3;
+    currentYield += ashAdd;
+    steps.push({ text: `Asche: +${ashAdd} Pkt`, type: 'add' });
+  }
+
+  if (item.tier === 1) {
+    const adjacentOrbCount = neighbors.reduce((count, nIdx) => (board[nIdx]?.type === 'orb' ? count + 1 : count), 0);
+    if (adjacentOrbCount > 0) {
+      const mult = Math.pow(2, adjacentOrbCount);
+      currentYield *= mult;
+      steps.push({ text: `Glaskugel: x${mult}`, type: 'multiplier' });
+    }
+  }
+
+  const adjacentAmplifierCount = neighbors.reduce((count, nIdx) => (board[nIdx]?.type === 'amplifier' ? count + 1 : count), 0);
+  if (adjacentAmplifierCount > 0) {
+    const ampAdd = adjacentAmplifierCount * 5;
+    currentYield += ampAdd;
+    steps.push({ text: `Verstärker: +${ampAdd} Pkt`, type: 'add' });
+  }
+
+  const adjacentEdgeCompassCount = neighbors.reduce((count, nIdx) => {
+    const nItem = board[nIdx];
+    if (nItem?.type === 'compass') {
+      const row = Math.floor(nIdx / 4);
+      const col = nIdx % 4;
+      if (row === 0 || row === 3 || col === 0 || col === 3) return count + 1;
+    }
+    return count;
+  }, 0);
+  if (adjacentEdgeCompassCount > 0) {
+    const mult = Math.pow(2, adjacentEdgeCompassCount);
+    currentYield *= mult;
+    steps.push({ text: `Kompass: x${mult}`, type: 'multiplier' });
+  }
+
+  const row = Math.floor(index / 4);
+  let rowCatalystCount = 0;
+  for (let c = 0; c < 4; c++) {
+    if (board[row * 4 + c]?.type === 'catalyst') rowCatalystCount++;
+  }
+  if (rowCatalystCount > 0) {
+    const mult = Math.pow(2, rowCatalystCount);
+    currentYield *= mult;
+    steps.push({ text: `Katalysator: x${mult}`, type: 'multiplier' });
+  }
+
+  return { totalScore: currentYield, steps };
+}
+
+/**
  * Berechnet den Gesamtertrag des 4x4-Spielfelds inkl. Tresor-, Prisma- & Philosophenstein-Multiplikatoren.
  */
 export function calculateBoardScore(board: BoardState, playerPoolLength: number = 4): number {
@@ -333,12 +524,10 @@ export function calculateBoardScore(board: BoardState, playerPoolLength: number 
     baseScore += calculateTileScore(i, board, playerPoolLength);
   }
 
-  // Prisma (+50% pro Prisma)
   if (prismCount > 0) {
     baseScore = Math.floor(baseScore * Math.pow(1.5, prismCount));
   }
 
-  // Der Stein der Weisen GOD-MODE (Tier 5): Multipliziert den FINALSCORE mit x3!
   if (philosopherStoneCount > 0) {
     baseScore *= Math.pow(3, philosopherStoneCount);
   }
@@ -349,7 +538,7 @@ export function calculateBoardScore(board: BoardState, playerPoolLength: number 
 /**
  * Erhält Extrapunkte beim Zerstören/Fressen eines Keimlings.
  */
-function getSproutExplosionBonus(item: Item | null): number {
+export function getSproutExplosionBonus(item: Item | null): number {
   if (!item) return 0;
   if (item.type === 'sprout') {
     return (item.baseValue || 1) * 2;
@@ -358,7 +547,54 @@ function getSproutExplosionBonus(item: Item | null): number {
 }
 
 /**
- * Führt die Platzierungs-Trigger aller Karten aus.
+ * Erhöht für jede zerstörte/entfernte Karte den Basiswert aller auf dem Board befindlichen Aasgeier (🦅) dauerhaft um +4 Punkte!
+ */
+export function notifyVulturesOfDestruction(board: BoardState, destroyedCount: number): BoardState {
+  if (destroyedCount <= 0) return board;
+
+  return board.map((tile) => {
+    if (tile && tile.type === 'vulture') {
+      const currentVal = tile.baseValue || 0;
+      const newVal = currentVal + destroyedCount * 4;
+      return {
+        ...tile,
+        baseValue: newVal,
+        description: `Erhält +4 Punkte pro zerstörter Karte (aktueller Bonus: +${newVal}).`,
+      };
+    }
+    return tile;
+  });
+}
+
+/**
+ * Event Trigger Dispatcher: Verarbeitet Zerstörungen & benachrichtigt Aasgeier/Keimlinge.
+ */
+export function triggerCardDestruction(
+  board: BoardState,
+  destroyedIndices: number[]
+): { newBoard: BoardState; extraPoints: number } {
+  let newBoard = [...board];
+  let extraPoints = 0;
+
+  if (destroyedIndices.length === 0) {
+    return { newBoard, extraPoints };
+  }
+
+  for (const idx of destroyedIndices) {
+    const item = newBoard[idx];
+    if (item && item.type === 'sprout') {
+      extraPoints += (item.baseValue || 1) * 2;
+    }
+    newBoard[idx] = null;
+  }
+
+  newBoard = notifyVulturesOfDestruction(newBoard, destroyedIndices.length);
+
+  return { newBoard, extraPoints };
+}
+
+/**
+ * Führt die Platzierung einer Karte aus und feuert Event-Hooks ab.
  */
 export function applyItemPlacement(
   board: BoardState,
@@ -367,6 +603,14 @@ export function applyItemPlacement(
 ): { newBoard: BoardState; placedItem: Item; extraPoints?: number } {
   let newBoard = [...board];
   const neighbors = getAdjacentIndices(targetIndex);
+  const isOverwriting = newBoard[targetIndex] !== null;
+  let accumulatedExtraPoints = 0;
+
+  if (isOverwriting) {
+    const { newBoard: boardAfterOverwrite, extraPoints: overwritePoints } = triggerCardDestruction(newBoard, [targetIndex]);
+    newBoard = boardAfterOverwrite;
+    accumulatedExtraPoints += overwritePoints;
+  }
 
   switch (itemToPlace.type) {
     case 'smith': {
@@ -384,58 +628,60 @@ export function applyItemPlacement(
         }
       }
       newBoard[targetIndex] = itemToPlace;
-      return { newBoard, placedItem: itemToPlace };
+      return { newBoard, placedItem: itemToPlace, extraPoints: accumulatedExtraPoints };
     }
 
     case 'acid': {
+      const toDestroy: number[] = [];
       for (const nIdx of neighbors) {
         if (newBoard[nIdx] !== null && newBoard[nIdx]!.tier === 1) {
-          newBoard[nIdx] = null;
+          toDestroy.push(nIdx);
         }
       }
+      const { newBoard: destroyedBoard, extraPoints: acidExtra } = triggerCardDestruction(newBoard, toDestroy);
+      newBoard = destroyedBoard;
       newBoard[targetIndex] = itemToPlace;
-      return { newBoard, placedItem: itemToPlace };
+      return { newBoard, placedItem: itemToPlace, extraPoints: accumulatedExtraPoints + acidExtra };
     }
 
     case 'supernova': {
-      let deletedCount = 0;
-      let sproutBonus = 0;
-
+      const toDestroy: number[] = [];
       for (let i = 0; i < board.length; i++) {
         if (i !== targetIndex && newBoard[i] !== null && newBoard[i]!.tier === 1) {
-          deletedCount++;
-          sproutBonus += getSproutExplosionBonus(newBoard[i]);
-          newBoard[i] = null;
+          toDestroy.push(i);
         }
       }
+      const destroyedCount = toDestroy.length;
+      const { newBoard: destroyedBoard, extraPoints: supernovaExtra } = triggerCardDestruction(newBoard, toDestroy);
+      newBoard = destroyedBoard;
 
-      const bonusPoints = deletedCount * 25 + sproutBonus;
+      const bonusPoints = destroyedCount * 25 + supernovaExtra;
       const updatedSupernova: Item = {
         ...itemToPlace,
         baseValue: bonusPoints,
-        description: `Supernova explodiert (${deletedCount}x T1 gelöscht)! Ertrag: +${bonusPoints}.`,
+        description: `Supernova explodiert (${destroyedCount}x T1 gelöscht)! Ertrag: +${bonusPoints}.`,
       };
       newBoard[targetIndex] = updatedSupernova;
-      return { newBoard, placedItem: updatedSupernova };
+      return { newBoard, placedItem: updatedSupernova, extraPoints: accumulatedExtraPoints };
     }
 
     case 'compressor': {
-      let eatenCount = 0;
+      const toDestroy: number[] = [];
       let sumValues = 0;
-      let sproutBonus = 0;
 
       for (const nIdx of neighbors) {
         if (newBoard[nIdx] !== null) {
-          eatenCount++;
+          toDestroy.push(nIdx);
           const scoreVal = calculateTileScore(nIdx, board);
           sumValues += scoreVal > 0 ? scoreVal : newBoard[nIdx]!.baseValue || 1;
-          sproutBonus += getSproutExplosionBonus(newBoard[nIdx]);
-          newBoard[nIdx] = null;
         }
       }
+      const eatenCount = toDestroy.length;
+      const { newBoard: destroyedBoard, extraPoints: compExtra } = triggerCardDestruction(newBoard, toDestroy);
+      newBoard = destroyedBoard;
 
       const startVal = sumValues > 0 ? sumValues : 1;
-      const finalPoints = Math.floor(startVal * Math.pow(2, eatenCount)) + sproutBonus;
+      const finalPoints = Math.floor(startVal * Math.pow(2, eatenCount)) + compExtra;
       const updatedCompressor: Item = {
         ...itemToPlace,
         baseValue: finalPoints,
@@ -443,25 +689,25 @@ export function applyItemPlacement(
       };
 
       newBoard[targetIndex] = updatedCompressor;
-      return { newBoard, placedItem: updatedCompressor };
+      return { newBoard, placedItem: updatedCompressor, extraPoints: accumulatedExtraPoints };
     }
 
     case 'pyre': {
-      let destroyedCount = 0;
-      let sproutBonus = 0;
-
+      const toDestroy: number[] = [];
       for (const nIdx of neighbors) {
         if (newBoard[nIdx] !== null) {
-          destroyedCount++;
-          sproutBonus += getSproutExplosionBonus(newBoard[nIdx]);
-          newBoard[nIdx] = null;
+          toDestroy.push(nIdx);
         }
       }
+      const destroyedNeighbors = toDestroy.length;
+      const { newBoard: destroyedBoard, extraPoints: pyreExtra } = triggerCardDestruction(newBoard, toDestroy);
+      newBoard = destroyedBoard;
 
-      destroyedCount++;
+      const totalDestroyed = destroyedNeighbors + 1;
       newBoard[targetIndex] = null;
+      newBoard = notifyVulturesOfDestruction(newBoard, 1);
 
-      const bonusPoints = destroyedCount * 6 + sproutBonus;
+      const bonusPoints = totalDestroyed * 6 + pyreExtra + accumulatedExtraPoints;
       return { newBoard, placedItem: itemToPlace, extraPoints: bonusPoints };
     }
 
@@ -481,9 +727,9 @@ export function applyItemPlacement(
 
       let bonus = 0;
       if (lowestIdx !== -1) {
-        const sproutBonus = getSproutExplosionBonus(newBoard[lowestIdx]);
-        bonus = lowestVal * 2 + sproutBonus;
-        newBoard[lowestIdx] = null;
+        const { newBoard: destroyedBoard, extraPoints: rExtra } = triggerCardDestruction(newBoard, [lowestIdx]);
+        newBoard = destroyedBoard;
+        bonus = lowestVal * 2 + rExtra;
       }
 
       const updatedRecycler: Item = {
@@ -492,31 +738,32 @@ export function applyItemPlacement(
         description: `Recycled! Ertrag: +${(itemToPlace.baseValue ?? 1) + bonus}.`,
       };
       newBoard[targetIndex] = updatedRecycler;
-      return { newBoard, placedItem: updatedRecycler };
+      return { newBoard, placedItem: updatedRecycler, extraPoints: accumulatedExtraPoints };
     }
 
     case 'demolition_ball': {
       const row = Math.floor(targetIndex / 4);
-      let destroyedCount = 0;
-      let sproutBonus = 0;
+      const toDestroy: number[] = [];
 
       for (let c = 0; c < 4; c++) {
         const rIdx = row * 4 + c;
         if (rIdx !== targetIndex && newBoard[rIdx] !== null) {
-          destroyedCount++;
-          sproutBonus += getSproutExplosionBonus(newBoard[rIdx]);
-          newBoard[rIdx] = null;
+          toDestroy.push(rIdx);
         }
       }
 
-      const bonusPoints = destroyedCount * 5 + sproutBonus;
+      const destroyedCount = toDestroy.length;
+      const { newBoard: destroyedBoard, extraPoints: demoExtra } = triggerCardDestruction(newBoard, toDestroy);
+      newBoard = destroyedBoard;
+
+      const bonusPoints = destroyedCount * 10 + demoExtra;
       const updatedDemo: Item = {
         ...itemToPlace,
         baseValue: bonusPoints,
         description: `Reihe abgerissen (${destroyedCount}x)! Ertrag: +${bonusPoints}.`,
       };
       newBoard[targetIndex] = updatedDemo;
-      return { newBoard, placedItem: updatedDemo };
+      return { newBoard, placedItem: updatedDemo, extraPoints: accumulatedExtraPoints };
     }
 
     case 'midas': {
@@ -539,30 +786,21 @@ export function applyItemPlacement(
         description: `Midas berührt! Ertrag: +${(itemToPlace.baseValue ?? 1) + bonusFromCoins}.`,
       };
       newBoard[targetIndex] = updatedMidas;
-      return { newBoard, placedItem: updatedMidas };
+      return { newBoard, placedItem: updatedMidas, extraPoints: accumulatedExtraPoints };
     }
 
     default: {
       newBoard[targetIndex] = itemToPlace;
-      return { newBoard, placedItem: itemToPlace };
+      return { newBoard, placedItem: itemToPlace, extraPoints: accumulatedExtraPoints };
     }
   }
 }
 
 /**
- * Führt Rundenende-Trigger aus.
+ * Rundenende-Verarbeitung (z. B. Keimling-Wachstum).
  */
 export function updateTurnEndBoard(board: BoardState): BoardState {
   return board.map((item, i) => {
-    if (item && item.type === 'goldmine') {
-      const currentVal = item.baseValue !== undefined ? item.baseValue : 8;
-      const newVal = Math.max(0, currentVal - 1);
-      return {
-        ...item,
-        baseValue: newVal,
-        description: `Startet mit Ertrag = 8. Sinkt nach jedem Zug um 1 (Aktuell: ${newVal}).`,
-      };
-    }
     if (item && item.type === 'sprout') {
       const neighbors = getAdjacentIndices(i);
       const emptyNeighborsCount = neighbors.filter((nIdx) => board[nIdx] === null).length;
@@ -580,10 +818,10 @@ export function updateTurnEndBoard(board: BoardState): BoardState {
 
 /**
  * Zieht `count` (3) Handkarten EXKLUSIV aus dem eigenen Deck (`playerPool`) des Spielers.
- * Es werden NIEMALS zufällige Karten aus dem Gesamtkatalog gezogen!
  */
 export function getRandomDraftOptions(
   count: number = 3,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _level: number = 1,
   playerPool: Omit<Item, 'id'>[] = []
 ): Item[] {

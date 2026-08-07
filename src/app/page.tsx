@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Item, BoardState } from '@/types/game';
 import {
   BASE_CARD_POOL,
@@ -13,6 +13,7 @@ import {
   getRandomRewardOptions,
   getRandomTier5BonusCard,
   getAdjacentIndices,
+  getTileScoreBreakdown,
 } from '@/lib/gameLogic';
 import Leaderboard from '@/components/Leaderboard';
 import Card from '@/components/Card';
@@ -22,13 +23,15 @@ export interface ScorePopup {
   id: string;
   tileIndex: number;
   text: string;
-  color?: string;
+  color: string;
 }
 
 export default function Home() {
+  const popupIdRef = useRef(0);
+
   // Game State Hooks
   const [board, setBoard] = useState<BoardState>(Array(16).fill(null));
-  const [score, setScore] = useState<number>(0);
+  const [instantScore, setInstantScore] = useState<number>(0);
   const [level, setLevel] = useState<number>(1);
   const [targetQuota, setTargetQuota] = useState<number>(() => calculateTargetQuota(1));
   const [currentTurn, setCurrentTurn] = useState<number>(4);
@@ -37,10 +40,11 @@ export default function Home() {
   const [scorePopups, setScorePopups] = useState<ScorePopup[]>([]);
   const [pulsingTiles, setPulsingTiles] = useState<number[]>([]);
   const [hoveredCard, setHoveredCard] = useState<Item | null>(null);
+  const [hoveredBoardIndex, setHoveredBoardIndex] = useState<number | null>(null);
 
   // Karten-Pool & Draft
   const [playerPool, setPlayerPool] = useState<Omit<Item, 'id'>[]>(BASE_CARD_POOL);
-  const [draftOptions, setDraftOptions] = useState<Item[]>([]);
+  const [draftOptions, setDraftOptions] = useState<Item[]>(() => getRandomDraftOptions(3, 1, BASE_CARD_POOL));
   const [selectedDraftItem, setSelectedDraftItem] = useState<Item | null>(null);
 
   // Modals & Status
@@ -55,7 +59,11 @@ export default function Home() {
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState<boolean>(false);
   const [rerollsLeft, setRerollsLeft] = useState<number>(1);
 
-  // Group player pool by card type for inspection
+  // Live-Berechnung des Board-Werts & des Gesamt-Rundenergebnisses
+  const boardValue = calculateBoardScore(board, playerPool.length);
+  const totalRoundScore = instantScore + boardValue;
+
+  // Group player pool by card type for inspection in Deck Modal
   const groupedPlayerPool = playerPool.reduce<
     Record<string, { count: number; item: Omit<Item, 'id'> }>
   >((acc, card) => {
@@ -66,11 +74,6 @@ export default function Home() {
     }
     return acc;
   }, {});
-
-  // Initialisierung beim ersten Laden
-  useEffect(() => {
-    setDraftOptions(getRandomDraftOptions(3, 1, BASE_CARD_POOL));
-  }, []);
 
   /**
    * Wählt eine Draft-Karte aus.
@@ -103,27 +106,26 @@ export default function Home() {
     // 1. Board & Platzierung ausführen (inkl. Placement-Trigger)
     const { newBoard: placedBoard, extraPoints } = applyItemPlacement(board, index, selectedDraftItem);
 
-    // 2. Rundenende-Trigger ausführen (Goldmine, Singularität, Philosophenstein)
+    // 2. Rundenende-Trigger ausführen (Goldmine, Singularität, etc.)
     const finalBoard = updateTurnEndBoard(placedBoard);
     setBoard(finalBoard);
 
-    // 3. Ertrag / Score neu berechnen
-    const boardYield = calculateBoardScore(finalBoard, playerPool.length);
-    const prevScore = score;
-    const totalExtra = (extraPoints || 0) + overwriteSproutBonus;
-    const newScore = prevScore + boardYield + totalExtra;
-    setScore(newScore);
+    // 3. Sofort-Punkte verbuchen & neues Gesamtergebnis berechnen
+    const addedInstant = (extraPoints || 0) + overwriteSproutBonus;
+    const newInstantScore = instantScore + addedInstant;
+    setInstantScore(newInstantScore);
+
+    const newBoardValue = calculateBoardScore(finalBoard, playerPool.length);
+    const newTotalRoundScore = newInstantScore + newBoardValue;
 
     // Visual Juice 1: Floating Score Popups
-    const timestamp = Date.now();
-    const placedScore = calculateTileScore(index, finalBoard, playerPool.length);
-    const scoreDiff = newScore - prevScore;
+    const popupId = ++popupIdRef.current;
 
     const popupsToAdd: ScorePopup[] = [];
-    const targetScoreText = placedScore > 0 ? `+${placedScore}!` : scoreDiff > 0 ? `+${scoreDiff}!` : '✨!';
+    const targetScoreText = addedInstant > 0 ? `+${addedInstant}` : '✨';
 
     popupsToAdd.push({
-      id: `popup_${index}_${timestamp}`,
+      id: `popup_${index}_${popupId}`,
       tileIndex: index,
       text: targetScoreText,
       color:
@@ -135,59 +137,68 @@ export default function Home() {
     });
 
     const neighbors = getAdjacentIndices(index);
-    for (const nIdx of neighbors) {
-      const nScore = calculateTileScore(nIdx, finalBoard);
-      if (nScore > 0 && finalBoard[nIdx] !== null) {
-        popupsToAdd.push({
-          id: `popup_${nIdx}_${timestamp}`,
-          tileIndex: nIdx,
-          text: `+${nScore}!`,
-          color: 'text-yellow-300 border-yellow-400 bg-yellow-950/90 shadow-yellow-500/50',
-        });
+    neighbors.forEach((nIdx) => {
+      const neighborItem = finalBoard[nIdx];
+      if (neighborItem) {
+        const nScore = calculateTileScore(nIdx, finalBoard, playerPool.length);
+        if (nScore > 0) {
+          popupsToAdd.push({
+            id: `popup_n_${nIdx}_${popupId}`,
+            tileIndex: nIdx,
+            text: `+${nScore}`,
+            color: 'text-indigo-300 border-indigo-400 bg-indigo-950/90 shadow-indigo-500/50',
+          });
+        }
       }
-    }
+    });
 
     setScorePopups((prev) => [...prev, ...popupsToAdd]);
     setTimeout(() => {
       setScorePopups((prev) => prev.filter((p) => !popupsToAdd.some((added) => added.id === p.id)));
-    }, 1000);
+    }, 1200);
 
-    // Visual Juice 2: Multiplier Pulse Effect
-    const highlightIndices = [index];
-    if (
-      selectedDraftItem.type === 'amplifier' ||
-      selectedDraftItem.type === 'midas' ||
-      selectedDraftItem.type === 'compressor' ||
-      selectedDraftItem.type === 'philosopher_stone' ||
-      selectedDraftItem.type === 'pyre' ||
-      selectedDraftItem.type === 'collector'
-    ) {
-      highlightIndices.push(...neighbors);
-    }
-
-    setPulsingTiles(highlightIndices);
+    // Visual Juice 2: Pulsierende Nachbarfelder
+    const activeIndices = [index, ...neighbors.filter((nIdx) => finalBoard[nIdx] !== null)];
+    setPulsingTiles(activeIndices);
     setTimeout(() => {
       setPulsingTiles([]);
-    }, 800);
+    }, 500);
 
-    // 4. Züge verringern & Entwurfs-Karten zurücksetzen
-    const newTurn = currentTurn - 1;
-    setCurrentTurn(newTurn);
+    // 4. Gewählte Handkarte aus den Draft-Optionen verbrauchen
+    const remainingDraft = draftOptions.filter((item) => item.id !== selectedDraftItem.id);
+    setDraftOptions(remainingDraft);
     setSelectedDraftItem(null);
-    setDraftOptions(getRandomDraftOptions(3, level, playerPool));
 
-    // 5. Ende der Runde prüfen (Züge = 0)
-    if (newTurn === 0) {
-      if (newScore >= targetQuota) {
-        const exactMatch = newScore === targetQuota;
-        setIsExactMatch(exactMatch);
-        setRewardOptions(getRandomRewardOptions(3, level));
-        setRewardTab(exactMatch ? 'bonus' : 'choose');
+    // 5. Zug abziehen
+    const nextTurn = currentTurn - 1;
+    setCurrentTurn(nextTurn);
+
+    // 6. Prüfen, ob die Welle / Runde vorbei ist (0 Züge verbleibend)
+    if (nextTurn === 0) {
+      if (newTotalRoundScore >= targetQuota) {
+        // Welle bestanden!
+        const exact = newTotalRoundScore === targetQuota;
+        setIsExactMatch(exact);
         setIsRewardPhase(true);
+
+        const newRewards = getRandomRewardOptions(3, level);
+        setRewardOptions(newRewards);
       } else {
+        // Welle nicht erreicht -> Game Over
         setIsGameOver(true);
       }
     }
+  };
+
+  /**
+   * Würfelt die 3 Entwurf-Handkarten neu aus dem eigenen Kartendeck des Spielers.
+   */
+  const handleRerollDraft = () => {
+    if (rerollsLeft <= 0 || isGameOver || isRewardPhase) return;
+    setRerollsLeft((prev) => prev - 1);
+    setDraftOptions(getRandomDraftOptions(3, level, playerPool));
+    setSelectedDraftItem(null);
+    setHintMessage(null);
   };
 
   /**
@@ -202,16 +213,18 @@ export default function Home() {
   };
 
   /**
-   * Startet das nächste Level mit dem aktualisierten Deck-Pool.
+   * Hilfsfunktion: Startet das nächste Level mit dem aktualisierten Kartendeck des Spielers.
    */
   const startNextLevelWithPool = (updatedPool: Omit<Item, 'id'>[]) => {
     const nextLevel = level + 1;
-    const nextQuota = calculateTargetQuota(nextLevel);
-
-    setPlayerPool(updatedPool);
     setLevel(nextLevel);
-    setTargetQuota(nextQuota);
+    setPlayerPool(updatedPool);
+    setTargetQuota(calculateTargetQuota(nextLevel));
+
+    // Reset des Spielfelds für das neue Level
+    setBoard(Array(16).fill(null));
     setCurrentTurn(4);
+    setInstantScore(0);
     setRerollsLeft(1);
 
     setIsRewardPhase(false);
@@ -224,6 +237,7 @@ export default function Home() {
    * Option A: Neue Karte wählen & direkt nächstes Level starten.
    */
   const handlePickRewardCard = (rewardCard: Item) => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, ...cardTemplate } = rewardCard;
     const updatedPool = [...playerPool, cardTemplate];
     startNextLevelWithPool(updatedPool);
@@ -250,6 +264,7 @@ export default function Home() {
    */
   const handleClaimTier5Bonus = () => {
     const bonusCard = getRandomTier5BonusCard();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id, ...cardTemplate } = bonusCard;
     const updatedPool = [...playerPool, cardTemplate];
     startNextLevelWithPool(updatedPool);
@@ -261,7 +276,7 @@ export default function Home() {
   const handleRestart = () => {
     const emptyBoard = Array(16).fill(null);
     setBoard(emptyBoard);
-    setScore(0);
+    setInstantScore(0);
     setLevel(1);
     setTargetQuota(calculateTargetQuota(1));
     setCurrentTurn(4);
@@ -327,24 +342,29 @@ export default function Home() {
           <p className="text-xs text-slate-400 font-medium">Platziere, kombiniere & optimiere dein Deck</p>
         </header>
 
-        {/* Header-Leiste: Score, Quota, Züge */}
-        <section className="w-full grid grid-cols-3 gap-3 bg-slate-900/90 border border-slate-800 p-3.5 rounded-2xl shadow-lg backdrop-blur-sm">
-          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Score</span>
-            <span className={`text-xl font-bold transition-colors ${score >= targetQuota ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {score}
+        {/* Header-Leiste: Board-Wert, Sofort-Punkte, Gesamt-Score & Ziel */}
+        <section className="w-full grid grid-cols-4 gap-2 bg-slate-900/90 border border-slate-800 p-2.5 rounded-2xl shadow-lg backdrop-blur-sm">
+          <div className="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Board</span>
+            <span className="text-sm sm:text-base font-bold text-emerald-400">+{boardValue}</span>
+          </div>
+
+          <div className="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Sofort</span>
+            <span className="text-sm sm:text-base font-bold text-amber-400">+{instantScore}</span>
+          </div>
+
+          <div className="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Gesamt</span>
+            <span className={`text-sm sm:text-base font-black ${totalRoundScore >= targetQuota ? 'text-emerald-300' : 'text-amber-300'}`}>
+              {totalRoundScore}
             </span>
           </div>
 
-          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Ziel</span>
-            <span className="text-xl font-bold text-indigo-400">{targetQuota}</span>
-          </div>
-
-          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Züge</span>
-            <span className={`text-xl font-bold ${currentTurn <= 1 ? 'text-red-400 animate-pulse' : 'text-emerald-400'}`}>
-              {currentTurn} / 4
+          <div className="flex flex-col items-center justify-center p-1.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Ziel (Zug)</span>
+            <span className="text-xs sm:text-sm font-bold text-indigo-300 truncate">
+              {targetQuota} <span className="text-[10px] text-slate-400 font-normal">({currentTurn}/4)</span>
             </span>
           </div>
         </section>
@@ -361,7 +381,7 @@ export default function Home() {
           <div className="grid grid-cols-4 gap-2 h-full w-full">
             {board.map((item, index) => {
               const canPlace = selectedDraftItem !== null && !isGameOver && !isRewardPhase;
-              const tileScore = item ? calculateTileScore(index, board) : 0;
+              const tileScore = item ? calculateTileScore(index, board, playerPool.length) : 0;
               const isPulsing = pulsingTiles.includes(index);
               const activePopups = scorePopups.filter((p) => p.tileIndex === index);
 
@@ -374,7 +394,10 @@ export default function Home() {
                   canPlace={canPlace}
                   isDisabled={isGameOver || isRewardPhase}
                   onClick={() => handleCellClick(index)}
-                  onHover={setHoveredCard}
+                  onHover={(c) => {
+                    setHoveredCard(c);
+                    setHoveredBoardIndex(c ? index : null);
+                  }}
                   popups={activePopups}
                   variant="board"
                 />
@@ -383,25 +406,60 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Zentrale Karten-Detail-Leiste (Infobox für Hover & Touch/Mobile) */}
+        {/* Zentrale Karten-Detail-Leiste (Infobox mit exakter Punkte-Aufschlüsselung) */}
         {(() => {
           const focusedItem = hoveredCard || selectedDraftItem;
+          const isPlacedTile = hoveredBoardIndex !== null && board[hoveredBoardIndex] !== null;
+          const breakdown = isPlacedTile ? getTileScoreBreakdown(hoveredBoardIndex!, board, playerPool.length) : null;
+
           return (
-            <div className="w-full bg-slate-900/90 border border-amber-500/40 p-2.5 rounded-xl shadow-lg backdrop-blur-sm min-h-[56px] flex items-center gap-3 transition-all">
+            <div className="w-full bg-slate-900/90 border border-amber-500/40 p-2.5 rounded-xl shadow-lg backdrop-blur-sm min-h-[56px] flex flex-col justify-center gap-1.5 transition-all">
               {focusedItem ? (
                 <>
-                  <span className="text-3xl filter drop-shadow flex-shrink-0">{focusedItem.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold text-amber-300 truncate">{focusedItem.name}</span>
-                      <span className="text-[9px] font-bold text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 rounded">
-                        Tier {focusedItem.tier}
-                      </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl filter drop-shadow flex-shrink-0">{focusedItem.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-extrabold text-amber-300 truncate">{focusedItem.name}</span>
+                        <span className="text-[9px] font-bold text-amber-400 bg-amber-950/80 border border-amber-800/80 px-1 rounded">
+                          Tier {focusedItem.tier}
+                        </span>
+                        {breakdown && (
+                          <span className="text-[10px] font-black text-emerald-300 bg-emerald-950/90 border border-emerald-500/60 px-1.5 py-0.5 rounded ml-auto">
+                            +{breakdown.totalScore} Pkt
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-tight font-medium mt-0.5">
+                        {focusedItem.description}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-slate-300 leading-tight font-medium mt-0.5">
-                      {focusedItem.description}
-                    </p>
                   </div>
+
+                  {/* Exakte Punkte-Aufschlüsselung für platzierte Karten */}
+                  {breakdown && breakdown.steps.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono pt-1.5 border-t border-slate-800/80">
+                      <span className="text-[9px] text-slate-400 font-sans font-semibold uppercase tracking-wider mr-1">
+                        Berechnung:
+                      </span>
+                      {breakdown.steps.map((step, idx) => (
+                        <span
+                          key={idx}
+                          className={`px-1.5 py-0.5 rounded border ${
+                            step.type === 'base'
+                              ? 'bg-slate-955 text-slate-300 border-slate-750'
+                              : step.type === 'add'
+                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+                              : step.type === 'multiplier'
+                              ? 'bg-purple-950/80 text-purple-300 border-purple-700/60'
+                              : 'bg-amber-950/90 text-amber-300 border-amber-500/80 font-black'
+                          }`}
+                        >
+                          {step.text}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="w-full text-center text-[11px] text-slate-500 italic py-1">
@@ -415,9 +473,20 @@ export default function Home() {
         {/* Unten: 3 Entwurfs-Karten (Hand-Optionen) */}
         <footer className="w-full space-y-2">
           <div className="flex items-center justify-between px-1">
-            <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-              Karten-Hand (Wähle 1 Karte)
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
+                Karten-Hand (Wähle 1 Karte)
+              </h2>
+              {rerollsLeft > 0 && !isGameOver && !isRewardPhase && (
+                <button
+                  onClick={handleRerollDraft}
+                  className="px-2 py-0.5 rounded-full bg-amber-950/80 border border-amber-500/60 text-[10px] font-bold text-amber-300 hover:bg-amber-900 hover:scale-105 transition-all cursor-pointer shadow-sm"
+                  title="Handkarten neu würfeln"
+                >
+                  🎲 Neu würfeln ({rerollsLeft})
+                </button>
+              )}
+            </div>
             {selectedDraftItem && (
               <span className="text-[10px] text-indigo-400 font-medium animate-pulse">
                 Platziere/Überbaue Kachel!
@@ -455,7 +524,7 @@ export default function Home() {
                   <div className="text-3xl mb-0.5">🎯</div>
                   <h2 className="text-lg font-black text-amber-300 uppercase tracking-widest">PUNKTLANDUNG!</h2>
                   <p className="text-[11px] text-amber-200 font-medium">
-                    Exakt <span className="font-extrabold">{score} / {targetQuota}</span> Punkte erreicht!
+                    Exakt <span className="font-extrabold">{totalRoundScore} / {targetQuota}</span> Punkte erreicht!
                   </p>
                 </div>
               ) : (
@@ -463,7 +532,7 @@ export default function Home() {
                   <div className="text-3xl mb-1">🎉</div>
                   <h2 className="text-xl font-bold text-emerald-400">Level {level} Geschafft!</h2>
                   <p className="text-xs text-slate-300 mt-1">
-                    Score: <span className="font-bold text-emerald-300">{score}</span> / Ziel: <span className="font-bold text-indigo-300">{targetQuota}</span>
+                    Score: <span className="font-bold text-emerald-300">{totalRoundScore}</span> / Ziel: <span className="font-bold text-indigo-300">{targetQuota}</span>
                   </p>
                 </>
               )}
@@ -668,7 +737,7 @@ export default function Home() {
             <div className="text-5xl mb-2">💀</div>
             <h2 className="text-2xl font-bold text-red-400 mb-1">Game Over</h2>
             <p className="text-xs text-slate-300 mb-4 max-w-xs">
-              Die Züge sind abgelaufen. Du hast <span className="font-bold text-amber-300">{score}</span> von benötigten <span className="font-bold text-indigo-300">{targetQuota}</span> Punkten erzielt.
+              Die Züge sind abgelaufen. Du hast <span className="font-bold text-amber-300">{totalRoundScore}</span> von benötigten <span className="font-bold text-indigo-300">{targetQuota}</span> Punkten erzielt.
             </p>
             <div className="flex flex-col gap-2.5 w-full max-w-xs">
               <button
@@ -760,7 +829,7 @@ export default function Home() {
       <Leaderboard
         isOpen={isLeaderboardOpen}
         onClose={() => setIsLeaderboardOpen(false)}
-        currentRunScore={isGameOver ? score : undefined}
+        currentRunScore={isGameOver ? totalRoundScore : undefined}
         currentRunLevel={isGameOver ? level : undefined}
       />
 

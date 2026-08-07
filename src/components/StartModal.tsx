@@ -1,22 +1,17 @@
 'use client';
-
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 const TUTORIAL_STORAGE_KEY = 'grid_alchemist_has_seen_tutorial';
 
 export default function StartModal() {
-  const [isOpen, setIsOpen] = useState<boolean>(false);
-
-  useEffect(() => {
+  const [isOpen, setIsOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
     try {
-      const hasSeen = localStorage.getItem(TUTORIAL_STORAGE_KEY);
-      if (!hasSeen) {
-        setIsOpen(true);
-      }
+      return !localStorage.getItem(TUTORIAL_STORAGE_KEY);
     } catch {
-      // ignore
+      return false;
     }
-  }, []);
+  });
 
   const handleClose = () => {
     try {
